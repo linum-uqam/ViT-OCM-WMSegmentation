@@ -102,7 +102,7 @@ def get_reference_to_image(x,y,z,section_data_set_ids,reference_space_id,structu
         rows_list.append(dict1)
     # saving the list of ROI information into a csv file.
     df = pd.DataFrame(rows_list)
-    df.to_csv('ROIs_description', sep='\t', encoding='utf-8')
+    df.to_csv('ROIs_description.csv', sep='\t', encoding='utf-8')
 
 def getROIsFrom3DMasks_per_structure(mask,section_data_set_ids,structure_acronym,structure_id,reference_space_id,resolution,width,height,image_api,sync_api):
     """ This function gets the ROIs from a 3D mask for a list of section data sets.

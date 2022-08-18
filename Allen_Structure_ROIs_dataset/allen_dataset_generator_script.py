@@ -8,8 +8,10 @@ import pandas as pd
 import os
 import argparse
 
-
-
+# Global variables
+NUMBER_OF_IMAGES_PER_STRUCTURE = 10
+PATH = './'
+COUNTERS_LIST = {}
 def getROIByIndex(section_image_id,x,y,width,height,destination_path,image_api):
     """ This function gets the ROI from the Allen Brain section image and saves it in the destination_path. 
     Parameters:
@@ -75,7 +77,7 @@ def get_reference_to_image(x,y,z,section_data_set_ids,reference_space_id,structu
             overlap == False
             continue
         
-        directory_name = structure_acronym +'_'+ str(structure_id) # name of the directory acronym + structure id
+        directory_name = PATH + structure_acronym +'_'+ str(structure_id) # name of the directory acronym + structure id
         file_name = f"si-{response_body['section_image_id']}_x-{response_body['x']}_y-{response_body['y']}{format_str}"
         destination_path = os.path.join(directory_name, file_name)
         print(destination_path)
@@ -100,6 +102,7 @@ def get_reference_to_image(x,y,z,section_data_set_ids,reference_space_id,structu
                     'z_ref':z,
                     'destination':destination_path}
         rows_list.append(dict1)
+        COUNTERS_LIST[structure_id] -= 1
     # saving the list of ROI information into a csv file.
     df = pd.DataFrame(rows_list)
     df.to_csv('ROIs_description.csv', sep='\t', encoding='utf-8',index=False)
@@ -141,6 +144,8 @@ def getROIsFrom3DMasks_per_structure(mask,section_data_set_ids,structure_acronym
         for i in range(int(mask_width / w)):
             for j in range(int(mask_height / h)):
                 if mask[k*steps_on_z_axis][i*w][j*h] > 0:
+                    if COUNTERS_LIST[structure_id] <=0:
+                        return count
                     get_reference_to_image(z=j*h*resolution-width/2,
                                             y=i*w*resolution-height/2,
                                             x= k*25*steps_on_z_axis,
@@ -223,28 +228,36 @@ if __name__ == '__main__':
     parser.add_argument('-R', '--resolution', type=int, help='resolution')
     parser.add_argument('-w', '--width', type=int, help='width')
     parser.add_argument('-H', '--height', type=int, help='height')
+    parser.add_argument('-N', '--number_of_Imagers_per_class', type=int, help='number of Imagers per class')
+    parser.add_argument('-p', '--path', type=str, help='path off the destination folder')
     args = parser.parse_args()
+
+    ### End of arguments ###
+    
+    ### APIs ###
+    image_api = ImageDownloadApi()
+    sync_api = SynchronizationApi()
+    ### End of APIs ###
+    ### Instances ###
+    rspc = ReferenceSpaceCache(resolution, reference_space_key, manifest=os.path.join("allen_ccf", "manifest.json")) 
+    tree = rspc.get_structure_tree(structure_graph_id=1) # The structure tree to use for extracting information about the structures (acronym, names, ids ...)
+    annotation, meta = rspc.get_annotation_volume() # the annotation volume to use for getting the labels of regions
+    rsp = rspc.get_reference_space()
+
     structure_data_set_ids_list = args.structure_data_set_ids_list if args.structure_data_set_ids_list != None else structure_data_set_ids_list
     structure_ids_list = args.structure_ids_list if args.structure_ids_list != None else structure_ids_list
     reference_space_id = int(args.reference_space_id) if args.reference_space_id != None else reference_space_id
     resolution = int(args.resolution) if args.resolution != None else resolution
     width = int(args.width) if args.width != None else width
     height = int(args.height) if args.height != None else height
-    ### End of arguments ###
-
-
-    
-
-
-    ### APIs and instances ###
-    image_api = ImageDownloadApi()
-    sync_api = SynchronizationApi()
-    rspc = ReferenceSpaceCache(resolution, reference_space_key, manifest=os.path.join("allen_ccf", "manifest.json")) 
-    tree = rspc.get_structure_tree(structure_graph_id=1) # The structure tree to use for extracting information about the structures (acronym, names, ids ...)
-    annotation, meta = rspc.get_annotation_volume() # the annotation volume to use for getting the labels of regions
-    rsp = rspc.get_reference_space() 
-
-    
+    NUMBER_OF_IMAGES_PER_STRUCTURE = int(args.number_of_Imagers_per_class) if args.number_of_Imagers_per_class != None else NUMBER_OF_IMAGES_PER_STRUCTURE
+    PATH = args.path if args.path != None else PATH
+    # initializing the COUNTERS_LIST for every structure id
+    for i in range(len(structure_ids_list)):
+        #COUNTERS_LIST.append({structure_ids_list[i] : NUMBER_OF_IMAGES_PER_STRUCTURE})
+        COUNTERS_LIST[structure_ids_list[i]] = NUMBER_OF_IMAGES_PER_STRUCTURE
+    ### End of instances ###
+    print(COUNTERS_LIST)
     getROIsFrom3DMasks(structure_data_set_ids_list,structure_ids_list,reference_space_id,resolution,width,height,image_api,sync_api,tree,rsp) 
-    #getROIsFrom3DMasks([74511839],[726,1056,507],9,25,334,334) 
+
    

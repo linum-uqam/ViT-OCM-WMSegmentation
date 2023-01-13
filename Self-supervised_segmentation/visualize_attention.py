@@ -17,7 +17,11 @@ from skimage import io
 import matplotlib.patches as patches
 from torchsummary import summary
 import copy
+from data import AIP_Dataset
 from scipy.ndimage import median_filter
+from torch.utils.data import DataLoader
+from glob import glob
+from utils import threshold, compute_attention,create_dir
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Visualize Self-Attention maps')
     parser.add_argument('--arch', default='vit_small', type=str,
@@ -29,7 +33,7 @@ if __name__ == '__main__':
         help='Key to use in the checkpoint (example: "teacher")')
     parser.add_argument("--image_path", default=None, type=str, help="Path of the image to load.")
     parser.add_argument("--image_size", default=(800, 800), type=int, nargs="+", help="Resize image.")
-    parser.add_argument('--output_dir', default='.', help='Path where to save visualizations.')
+    parser.add_argument('--output_dir', default='/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/images/', help='Path where to save visualizations.')
     parser.add_argument("--threshold", type=float, default=0.1, help="""We visualize masks
         obtained by thresholding the self-attention maps to keep xx% of the mass.""")
     # Boolyan for croping 
@@ -76,13 +80,6 @@ if __name__ == '__main__':
         else:
             print("There is no reference weights available for this model => We use random weights.")
     # summary(model, (3, 800, 800))
-    # make directory with the name checkpoints
-    # if not os.path.exists("checkpoints"):
-    #     os.makedirs("checkpoints")
-    # # save the model
-    # torch.save(model.state_dict(), "checkpoints/model.pth")
-    
-    # print(torch.cuda.memory_summary(device=None, abbreviated=False))
     # open image
     if args.image_path is None:
         # user has not specified any image - we use our own image
@@ -91,7 +88,9 @@ if __name__ == '__main__':
         response = requests.get("https://dl.fbaipublicfiles.com/dino/img.png")
         #img = Image.open(BytesIO(response.content))
         img_name = "brain_08_z43_roi02.jpg"
-        img_path = "/home/mohamad_h/data/40xmosaics_fullsize_subbg/" + img_name
+        directory_path = "/home/mohamad_h/data/40xmosaics_fullsize_subbg/"
+        img_path = directory_path + img_name
+
         img = Image.open(img_path) 
         # img = Image.open("/home/mohamad_h/data/Temp/sa1218Adva05.webp") 
         img = img.convert('RGB')
@@ -107,6 +106,54 @@ if __name__ == '__main__':
         pth_transforms.ToTensor(),
         # pth_transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
     ])
+
+
+
+
+    train_x = sorted(glob(img_path))
+    batch_size = 1
+    transformed_dataset  = AIP_Dataset(train_x,transform)
+    dl = DataLoader(transformed_dataset , batch_size=batch_size, shuffle=False, num_workers=1, pin_memory=True)
+    def train(model, loader, device):
+        for image, img_path in loader:
+            with torch.no_grad():
+                feat, attentions, qkv = model.get_intermediate_feat(image.to(device), n=1)
+                torch.cuda.empty_cache()
+
+                
+                original_img = Image.open(img_path[0]).convert('RGB')
+                # resize to ars.image_size
+                original_img = original_img.resize(args.image_size, Image.BICUBIC)
+                # to grayscale
+                original_img = original_img.convert('L')
+                image_name = img_path[0].split("/")[-1].split(".")[0]
+                output_directory = args.output_dir + image_name + "/"
+                create_dir(output_directory)
+                query = 0
+                w_featmap = image.shape[-2] // args.patch_size
+                h_featmap = image.shape[-1] // args.patch_size
+                attentions, nh = compute_attention(attentions, query, w_featmap, h_featmap, args.patch_size)
+                # average attentions over heads
+                average_attentions = np.mean(attentions, axis=0)
+                # median filter scipy
+                average_attentions = median_filter(average_attentions, size=50)
+                # save original image
+                torchvision.utils.save_image(torchvision.utils.make_grid(image, normalize=True, scale_each=True), os.path.join(output_directory, "img.png"))
+                # save attention maps for each head
+                for j in range(nh):
+                    fname = os.path.join(output_directory, "attn-head" + str(j) + ".png")
+                    plt.imsave(fname=fname, arr=attentions[j], format='png')
+                    print(f"{fname} saved.")
+                # save average attention
+                fname = os.path.join(output_directory, "attn-average.png")
+                plt.imsave(fname=fname, arr=average_attentions, format='png')
+                print(f"{fname} saved.")
+                # save thresholded attention
+                if args.threshold is not None:
+                    threshold(original_img, average_attentions, output_directory)
+        return feat, attentions, qkv
+
+    train(model, dl, device)
 
     original_img = img.copy()
     # resize to ars.image_size
@@ -153,8 +200,7 @@ if __name__ == '__main__':
     if args.query_analysis:
         
         path = os.path.join(args.output_dir, "analysis/"+img_name)
-        if not os.path.exists(path):
-            os.makedirs(path)
+        create_dir(path)
         print("Saving query analysis")
         px = 1/plt.rcParams['figure.dpi']  # pixel in inches
         
@@ -178,43 +224,3 @@ if __name__ == '__main__':
                 fig.savefig(fname ,bbox_inches='tight', pad_inches=0)
                 plt.close(fig)
         print("finished saving query analysis")
-    else:
-            # we keep only the output patch attention
-        query = 0
-        attentions = attentions[0, :, query, 1:].reshape(nh, -1) 
-        attentions = attentions.reshape(nh, w_featmap, h_featmap)
-        attentions = nn.functional.interpolate(attentions.unsqueeze(0), scale_factor=args.patch_size, mode="nearest")[0].cpu().numpy()
-        average_attentions = np.mean(attentions, axis=0)
-        # median filter scipy
-        average_attentions = median_filter(average_attentions, size=50)
-
-
-        torchvision.utils.save_image(torchvision.utils.make_grid(img, normalize=True, scale_each=True), os.path.join(args.output_dir, "img.png"))
-        for j in range(nh):
-            fname = os.path.join(args.output_dir, "attn-head" + str(j) + ".png")
-            plt.imsave(fname=fname, arr=attentions[j], format='png')
-            print(f"{fname} saved.")
-        # save average attention
-        fname = os.path.join(args.output_dir, "attn-average.png")
-        plt.imsave(fname=fname, arr=average_attentions, format='png')
-        print(f"{fname} saved.")
-        # save thresholded attention
-        if args.threshold is not None:
-            # multipli img with average attention
-            result = original_img * average_attentions / np.max(average_attentions)
-            # save result
-            os.makedirs(args.output_dir, exist_ok=True)
-            fname = os.path.join(args.output_dir, "result.png")
-            plt.imsave(fname=fname, arr=result, format='png')
-            #convert resul to CV_8UC1
-            result = result.astype(np.uint8)
-            # apply OTSU thresholding to the average result with opencv
-            ret , th = cv2.threshold(result, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            ret2, th2 = cv2.threshold( np.array(original_img), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_TRIANGLE)
-            fname = os.path.join(args.output_dir, "OTSU_th" + "_average.png")
-            # save as black and white cmap
-            plt.imsave(fname=fname, arr=th, format='png', cmap='gray')
-            print(f"{fname} saved.")
-            fname = os.path.join(args.output_dir, "OTSU_th" + "_original.png")
-            plt.imsave(fname=fname, arr=th2, format='png', cmap='gray')
-            print(f"{fname} saved.")

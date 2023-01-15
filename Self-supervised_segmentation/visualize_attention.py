@@ -92,7 +92,7 @@ if __name__ == '__main__':
         print("Since no image path have been provided, we take the first image in our paper.")
         response = requests.get("https://dl.fbaipublicfiles.com/dino/img.png")
         #img = Image.open(BytesIO(response.content))
-        img_name = ""
+        img_name = "brain_02_z15_roi00.jpg"
         directory_path = "/home/mohamad_h/data/40xmosaics_fullsize_subbg/"
         img_path = directory_path + img_name
     else:
@@ -105,7 +105,7 @@ if __name__ == '__main__':
         # pth_transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
     ])
     croped_transform = pth_transforms.Compose([
-        pth_transforms.Resize((args.image_size[0]//np.int(np.sqrt(args.crop)), args.image_size[1]//np.int(np.sqrt(args.crop)))),
+        pth_transforms.Resize((args.image_size[0]//np.int8(np.sqrt(args.crop)), args.image_size[1]//np.int8(np.sqrt(args.crop)))),
         pth_transforms.ToTensor(),
         # pth_transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
     ])
@@ -177,6 +177,10 @@ if __name__ == '__main__':
         for image, img_path,images in loader:
             with torch.no_grad():
                 averaged_cropes = []
+                thresholded_crops = []
+                image_name = img_path[0].split("/")[-1].split(".")[0]
+                output_directory = args.output_dir + image_name + f"/croped_{args.crop}/"
+                create_dir(output_directory)
                 for i in range(len(images)):
                     img = images[i]
                     img = img.to(device)
@@ -193,18 +197,32 @@ if __name__ == '__main__':
                     average_attentions = median_filter(average_attentions, size=20)
                     averaged_cropes.append(average_attentions)
 
+                    # call threshold function on all crops in the images list
+                    # convert tensor to numpy array
+                    img = img.squeeze(0).permute(1, 2, 0).cpu().numpy()
+                    img = img * 255
+                    img = img.astype(np.uint8)
+                    img = Image.fromarray(img)
+                    img = img.convert('L')
+                    th1, th2 = threshold(img, average_attentions, args.output_dir, save=False)
+                    thresholded_crops.append(th1)
+
                 reconstructed_average = concat_crops(averaged_cropes)
 
+                reconstructed_thresholded_image = concat_crops(thresholded_crops)
+                # save thresholded image
+                fname = os.path.join(output_directory, "reconstructed_threshold.png")
+                plt.imsave(fname=fname, arr=reconstructed_thresholded_image, format='png',cmap='gray')
+                print(f"{fname} saved.")
 
                 original_img = Image.open(img_path[0]).convert('RGB')
                 # resize to ars.image_size
-                original_img = original_img.resize(args.image_size, Image.BICUBIC)
+                original_img = original_img.resize(args.image_size, Image.Resampling.BICUBIC)
                 # to grayscale
                 original_img = original_img.convert('L')
-                image_name = img_path[0].split("/")[-1].split(".")[0]
-                output_directory = args.output_dir + image_name + f"/croped_{args.crop}/"
-                create_dir(output_directory)
+
                 original_img.save(os.path.join(output_directory, "img.png"))
+                print("img.png saved.")
                 # save average attention
                 fname = os.path.join(output_directory, "attn-average.png")
                 plt.imsave(fname=fname, arr=reconstructed_average, format='png')
@@ -249,9 +267,12 @@ if __name__ == '__main__':
     
     start_time = time.time()
     if(args.crop):
-        transformed_dataset = Croped_Dataset(train_x,croped_transform, args.crop,args.image_size)
-        dl = DataLoader(transformed_dataset , batch_size=batch_size, shuffle=False, num_workers=1, pin_memory=True)
-        train_croped(model, dl, device)
+        if args.crop != 4 and args.crop != 16:
+            print("crop must be 4 or 16")
+        else:
+            transformed_dataset = Croped_Dataset(train_x,croped_transform, args.crop,args.image_size)
+            dl = DataLoader(transformed_dataset , batch_size=batch_size, shuffle=False, num_workers=1, pin_memory=True)
+            train_croped(model, dl, device)
     else:
         transformed_dataset  = AIP_Dataset(train_x,transform)
         dl = DataLoader(transformed_dataset , batch_size=batch_size, shuffle=False, num_workers=1, pin_memory=True)

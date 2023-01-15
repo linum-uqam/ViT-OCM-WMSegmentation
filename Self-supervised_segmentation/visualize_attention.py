@@ -1,6 +1,6 @@
 
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = "4"
+os.environ['CUDA_VISIBLE_DEVICES'] = "1"
 import sys
 import argparse
 import cv2
@@ -17,11 +17,11 @@ from skimage import io
 import matplotlib.patches as patches
 from torchsummary import summary
 import copy
-from data import AIP_Dataset
+from data import AIP_Dataset, Croped_Dataset
 from scipy.ndimage import median_filter
 from torch.utils.data import DataLoader
 from glob import glob
-from utils import threshold, compute_attention,create_dir, execution_time
+from utils import threshold, compute_attention,create_dir, execution_time,concat_crops
 import time
 
 
@@ -30,17 +30,17 @@ if __name__ == '__main__':
     parser.add_argument('--arch', default='vit_small', type=str,
         choices=['vit_tiny', 'vit_small', 'vit_base'], help='Architecture (support only ViT atm).')
     parser.add_argument('--patch_size', default=8, type=int, help='Patch resolution of the model.')
-    parser.add_argument('--pretrained_weights', default='checkpoints/model.pth', type=str,
+    parser.add_argument('--pretrained_weights', default='./checkpoints/model.pth', type=str,
         help="Path to pretrained weights to load.")
     parser.add_argument("--checkpoint_key", default="teacher", type=str,
         help='Key to use in the checkpoint (example: "teacher")')
     parser.add_argument("--image_path", default=None, type=str, help="Path of the image to load.")
-    parser.add_argument("--image_size", default=(800, 800), type=int, nargs="+", help="Resize image.")
+    parser.add_argument("--image_size", default=(1280, 1280), type=int, nargs="+", help="Resize image.")
     parser.add_argument('--output_dir', default='/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/images/', help='Path where to save visualizations.')
     parser.add_argument("--threshold", type=float, default=0.1, help="""We visualize masks
         obtained by thresholding the self-attention maps to keep xx% of the mass.""")
     # Boolyan for croping 
-    parser.add_argument("--crop", type=bool, default=False, help="""To crop the image or not""")
+    parser.add_argument("--crop", type=int, default=4, help="""Amount of croping (4 or 16)""")
     # Attention query analysis mode boolean
     parser.add_argument("--query_analysis", type=bool, default=False, help="""To analyze the attention query or not""")
     # query rate parameter defaul is 10
@@ -92,19 +92,11 @@ if __name__ == '__main__':
         print("Since no image path have been provided, we take the first image in our paper.")
         response = requests.get("https://dl.fbaipublicfiles.com/dino/img.png")
         #img = Image.open(BytesIO(response.content))
-        img_name = "brain_08_z43_roi02.jpg"
+        img_name = ""
         directory_path = "/home/mohamad_h/data/40xmosaics_fullsize_subbg/"
         img_path = directory_path + img_name
-
-        img = Image.open(img_path) 
-        # img = Image.open("/home/mohamad_h/data/Temp/sa1218Adva05.webp") 
-        img = img.convert('RGB')
-    # elif os.path.isfile(args.image_path):
-    #     with open(args.image_path, 'rb') as f:
-    #         img = Image.open(f)
-    #         img = img.convert('RGB')
     else:
-        print(f"Provided image path {args.image_path} is non valid.")
+        print(f"Provided image path {args.image_path} will be used.")
         img_path = args.image_path
 
     transform = pth_transforms.Compose([
@@ -112,16 +104,12 @@ if __name__ == '__main__':
         pth_transforms.ToTensor(),
         # pth_transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
     ])
+    croped_transform = pth_transforms.Compose([
+        pth_transforms.Resize((args.image_size[0]//np.int(np.sqrt(args.crop)), args.image_size[1]//np.int(np.sqrt(args.crop)))),
+        pth_transforms.ToTensor(),
+        # pth_transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+    ])
 
-
-
-    if os.path.isfile(img_path):
-        train_x = sorted(glob(img_path))
-    else:
-        train_x = sorted(glob(img_path + "/*.jpg"))    
-    batch_size = 1
-    transformed_dataset  = AIP_Dataset(train_x,transform)
-    dl = DataLoader(transformed_dataset , batch_size=batch_size, shuffle=False, num_workers=1, pin_memory=True)
     def train(model, loader, device):
         for image, img_path in loader:
             with torch.no_grad():
@@ -184,35 +172,93 @@ if __name__ == '__main__':
                             plt.close(fig)
                     print("finished saving query analysis")
         return
+
+    def train_croped(model, loader, device):
+        for image, img_path,images in loader:
+            with torch.no_grad():
+                averaged_cropes = []
+                for i in range(len(images)):
+                    img = images[i]
+                    img = img.to(device)
+                    feat, attentions, qkv = model.get_intermediate_feat(img, n=1)
+                    torch.cuda.empty_cache()
+
+                    query = 0
+                    w_featmap = img.shape[-2] // args.patch_size
+                    h_featmap = img.shape[-1] // args.patch_size
+                    attention_response, nh = compute_attention(attentions, query, w_featmap, h_featmap, args.patch_size)
+                    # average attentions over heads
+                    average_attentions = np.mean(attention_response, axis=0)
+                    # median filter scipy
+                    average_attentions = median_filter(average_attentions, size=20)
+                    averaged_cropes.append(average_attentions)
+
+                reconstructed_average = concat_crops(averaged_cropes)
+
+
+                original_img = Image.open(img_path[0]).convert('RGB')
+                # resize to ars.image_size
+                original_img = original_img.resize(args.image_size, Image.BICUBIC)
+                # to grayscale
+                original_img = original_img.convert('L')
+                image_name = img_path[0].split("/")[-1].split(".")[0]
+                output_directory = args.output_dir + image_name + f"/croped_{args.crop}/"
+                create_dir(output_directory)
+                original_img.save(os.path.join(output_directory, "img.png"))
+                # save average attention
+                fname = os.path.join(output_directory, "attn-average.png")
+                plt.imsave(fname=fname, arr=reconstructed_average, format='png')
+                print(f"{fname} saved.")
+                # save thresholded attention
+                if args.threshold is not None:
+                    threshold(original_img, reconstructed_average, output_directory)
+
+
+                if args.query_analysis:
+                    path = args.output_dir + image_name + "/analysis/"
+                    create_dir(path)
+                    print("Saving query analysis")
+                    px = 1/plt.rcParams['figure.dpi']  # pixel in inches
+                    
+                    for i in range(0, w_featmap//args.query_rate):
+                        for j in range(0, h_featmap//args.query_rate):
+                            query = i * w_featmap*args.query_rate + j*args.query_rate
+                            print("path index " + query)
+                            attentions_reshaped, nh = compute_attention(attentions, query, w_featmap, h_featmap, args.patch_size)
+                            average_attentions = np.mean(attentions_reshaped, axis=0) 
+                            fname = os.path.join(path, f"attn-average-{query}.png")
+                            fig, ax = plt.subplots(figsize=(args.image_size[0]*px, args.image_size[0]*px))
+                            ax.axis('off')   
+                            ax.imshow(average_attentions, aspect='auto')
+                            if query != 0: 
+                                square = patches.Rectangle((j*args.patch_size*args.query_rate,i*args.patch_size*args.query_rate), 8,8, color='RED')
+                                ax.add_patch(square)
+                            fig.savefig(fname ,bbox_inches='tight', pad_inches=0)
+                            plt.close(fig)
+                    print("finished saving query analysis")
+        return
+
+
+
+
+    if os.path.isfile(img_path):
+        train_x = sorted(glob(img_path))
+    else:
+        train_x = sorted(glob(img_path + "/*.jpg"))    
+    batch_size = 1
+    
     start_time = time.time()
-    train(model, dl, device)
+    if(args.crop):
+        transformed_dataset = Croped_Dataset(train_x,croped_transform, args.crop,args.image_size)
+        dl = DataLoader(transformed_dataset , batch_size=batch_size, shuffle=False, num_workers=1, pin_memory=True)
+        train_croped(model, dl, device)
+    else:
+        transformed_dataset  = AIP_Dataset(train_x,transform)
+        dl = DataLoader(transformed_dataset , batch_size=batch_size, shuffle=False, num_workers=1, pin_memory=True)
+        train(model, dl, device)
+
     end_time = time.time()
     excution_mins, execution_secs = execution_time(start_time, end_time)
     print(f"Execution time: {excution_mins}m {execution_secs}s")
 
-    # original_img = img.copy()
-    # # resize to ars.image_size
-    # original_img = original_img.resize(args.image_size, Image.BICUBIC)
-    # # to grayscale
-    # original_img = original_img.convert('L')
-    # to_be_croped_img = img.copy()
-    # img = transform(img)
     
-    # if args.crop:
-    #     # Brake the image into 4 equal crops and stack them in a list of images
-    #     images = []
-    #     w, h = to_be_croped_img.size[0] // 2, to_be_croped_img.size[1] // 2
-    #     for i in range(2):
-    #         for j in range(2):
-    #             images.append(transform(to_be_croped_img.crop((j * w, i * h, (j + 1) * w, (i + 1) * h))))
-                
-    #     # save the four crops
-    #     for i, t_img in enumerate(images):
-    #         torchvision.utils.save_image(t_img, f"crop_{i}.png")
-    #         print(f"crop_{i}.png saved")
-
-    #     # rebuild the image from the 4 crops top left, top right, bottom left, bottom right
-    #     reconstructed_img = torch.cat((torch.cat((images[0], images[1]), dim=2), torch.cat((images[2], images[3]), dim=2)), dim=1)
-    #     torchvision.utils.save_image(reconstructed_img, "reconstructed_img.png")
-    #     print("reconstructed_img saved")
-

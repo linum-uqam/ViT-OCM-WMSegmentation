@@ -51,7 +51,7 @@ def threshold(img , attention, output_directory):
     plt.imsave(fname=fname, arr=th2, format='png', cmap='gray')
     print(f"{fname} saved.")
 
-
+""" Prepare the attention map for visualization """
 def compute_attention(attentions, query,w_featmap, h_featmap, patch_size):
     attentions = attentions[0]
     nh = attentions.shape[1] # number of head, 
@@ -59,3 +59,21 @@ def compute_attention(attentions, query,w_featmap, h_featmap, patch_size):
     attentions = attentions.reshape(nh, w_featmap, h_featmap)
     attentions = nn.functional.interpolate(attentions.unsqueeze(0), scale_factor=patch_size, mode="nearest")[0].cpu().numpy()
     return attentions, nh
+
+
+# function that concatinates 16 crop parts of an image, use numpy
+def concat_crops(crops):
+    crop_number = len(crops)
+    crop_iteration = int(np.sqrt(crop_number))
+    vertical = []
+    for i in range(crop_iteration):
+        
+        horizontal = crops[i*crop_iteration]
+        for j in range(1,crop_iteration):
+           horizontal = np.concatenate((horizontal, crops[i*crop_iteration + j ]), axis=1)
+        if i == 0:
+            vertical = horizontal
+        else:
+            vertical = np.concatenate((vertical, horizontal), axis=0)
+    return vertical
+

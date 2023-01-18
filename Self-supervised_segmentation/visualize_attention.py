@@ -1,6 +1,6 @@
 
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = "1"
+os.environ['CUDA_VISIBLE_DEVICES'] = "5"
 import sys
 import argparse
 import cv2
@@ -21,7 +21,7 @@ from data import AIP_Dataset, Croped_Dataset
 from scipy.ndimage import median_filter
 from torch.utils.data import DataLoader
 from glob import glob
-from utils import threshold, compute_attention,create_dir, execution_time,concat_crops
+from utils import threshold, compute_attention,create_dir, execution_time,concat_crops, yen_threshold, morphology_cleaning
 import time
 
 
@@ -35,12 +35,12 @@ if __name__ == '__main__':
     parser.add_argument("--checkpoint_key", default="teacher", type=str,
         help='Key to use in the checkpoint (example: "teacher")')
     parser.add_argument("--image_path", default=None, type=str, help="Path of the image to load.")
-    parser.add_argument("--image_size", default=(1280, 1280), type=int, nargs="+", help="Resize image.")
+    parser.add_argument("--image_size", default=(720, 720), type=int, nargs="+", help="Resize image.")
     parser.add_argument('--output_dir', default='/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/images/', help='Path where to save visualizations.')
     parser.add_argument("--threshold", type=float, default=0.1, help="""We visualize masks
         obtained by thresholding the self-attention maps to keep xx% of the mass.""")
     # Boolyan for croping 
-    parser.add_argument("--crop", type=int, default=4, help="""Amount of croping (4 or 16)""")
+    parser.add_argument("--crop", type=int, default=1, help="""Amount of croping (4 or 16)""")
     # Attention query analysis mode boolean
     parser.add_argument("--query_analysis", type=bool, default=False, help="""To analyze the attention query or not""")
     # query rate parameter defaul is 10
@@ -119,7 +119,7 @@ if __name__ == '__main__':
                 
                 original_img = Image.open(img_path[0]).convert('RGB')
                 # resize to ars.image_size
-                original_img = original_img.resize(args.image_size, Image.BICUBIC)
+                original_img = original_img.resize(args.image_size, Image.Resampling.BICUBIC)
                 # to grayscale
                 original_img = original_img.convert('L')
                 image_name = img_path[0].split("/")[-1].split(".")[0]
@@ -147,8 +147,9 @@ if __name__ == '__main__':
                 # save thresholded attention
                 if args.threshold is not None:
                     threshold(original_img, average_attentions, output_directory)
-
-
+                    binary = yen_threshold(original_img, output_directory, save=True)
+                    query_points = morphology_cleaning(binary, output_directory, save=True)
+                # save query analysis
                 if args.query_analysis:
                     path = args.output_dir + image_name + "/analysis/"
                     create_dir(path)
@@ -158,7 +159,7 @@ if __name__ == '__main__':
                     for i in range(0, w_featmap//args.query_rate):
                         for j in range(0, h_featmap//args.query_rate):
                             query = i * w_featmap*args.query_rate + j*args.query_rate
-                            print("path index " + query)
+                            print(f"query: {query}")
                             attentions_reshaped, nh = compute_attention(attentions, query, w_featmap, h_featmap, args.patch_size)
                             average_attentions = np.mean(attentions_reshaped, axis=0) 
                             fname = os.path.join(path, f"attn-average-{query}.png")
@@ -233,27 +234,28 @@ if __name__ == '__main__':
 
 
                 if args.query_analysis:
-                    path = args.output_dir + image_name + "/analysis/"
-                    create_dir(path)
-                    print("Saving query analysis")
-                    px = 1/plt.rcParams['figure.dpi']  # pixel in inches
+                    # path = args.output_dir + image_name + "/analysis/"
+                    # create_dir(path)
+                    # print("Saving query analysis")
+                    # px = 1/plt.rcParams['figure.dpi']  # pixel in inches
                     
-                    for i in range(0, w_featmap//args.query_rate):
-                        for j in range(0, h_featmap//args.query_rate):
-                            query = i * w_featmap*args.query_rate + j*args.query_rate
-                            print("path index " + query)
-                            attentions_reshaped, nh = compute_attention(attentions, query, w_featmap, h_featmap, args.patch_size)
-                            average_attentions = np.mean(attentions_reshaped, axis=0) 
-                            fname = os.path.join(path, f"attn-average-{query}.png")
-                            fig, ax = plt.subplots(figsize=(args.image_size[0]*px, args.image_size[0]*px))
-                            ax.axis('off')   
-                            ax.imshow(average_attentions, aspect='auto')
-                            if query != 0: 
-                                square = patches.Rectangle((j*args.patch_size*args.query_rate,i*args.patch_size*args.query_rate), 8,8, color='RED')
-                                ax.add_patch(square)
-                            fig.savefig(fname ,bbox_inches='tight', pad_inches=0)
-                            plt.close(fig)
-                    print("finished saving query analysis")
+                    # for i in range(0, w_featmap//args.query_rate):
+                    #     for j in range(0, h_featmap//args.query_rate):
+                    #         query = i * w_featmap*args.query_rate + j*args.query_rate
+                    #         print("path index " + query)
+                    #         attentions_reshaped, nh = compute_attention(attentions, query, w_featmap, h_featmap, args.patch_size)
+                    #         average_attentions = np.mean(attentions_reshaped, axis=0) 
+                    #         fname = os.path.join(path, f"attn-average-{query}.png")
+                    #         fig, ax = plt.subplots(figsize=(args.image_size[0]*px, args.image_size[0]*px))
+                    #         ax.axis('off')   
+                    #         ax.imshow(average_attentions, aspect='auto')
+                    #         if query != 0: 
+                    #             square = patches.Rectangle((j*args.patch_size*args.query_rate,i*args.patch_size*args.query_rate), 8,8, color='RED')
+                    #             ax.add_patch(square)
+                    #         fig.savefig(fname ,bbox_inches='tight', pad_inches=0)
+                    #         plt.close(fig)
+                    # print("finished saving query analysis")
+                    print("Query analysis not supported for croped images")
         return
 
 
@@ -266,7 +268,7 @@ if __name__ == '__main__':
     batch_size = 1
     
     start_time = time.time()
-    if(args.crop):
+    if(args.crop > 1):
         if args.crop != 4 and args.crop != 16:
             print("crop must be 4 or 16")
         else:

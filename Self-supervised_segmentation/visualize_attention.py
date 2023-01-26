@@ -45,6 +45,10 @@ if __name__ == '__main__':
     parser.add_argument("--query_analysis", type=bool, default=False, help="""To analyze the attention query or not""")
     # query rate parameter defaul is 10
     parser.add_argument("--query_rate", type=int, default=10, help="""Rate of the query analysis""")
+    # boolean to save the queried attention maps with the target points
+    parser.add_argument("--save_query", type=bool, default=True, help="""To save the queried attention maps with the target points""")
+    # boolean to save the feature maps
+    parser.add_argument("--save_feature", type=bool, default=False, help="""To save the feature maps""")
     args = parser.parse_args()
 
     torch.cuda.empty_cache()
@@ -89,9 +93,7 @@ if __name__ == '__main__':
     if args.image_path is None:
         # user has not specified any image - we use our own image
         print("Please use the `--image_path` argument to indicate the path of the image you wish to visualize.")
-        print("Since no image path have been provided, we take the first image in our paper.")
-        response = requests.get("https://dl.fbaipublicfiles.com/dino/img.png")
-        #img = Image.open(BytesIO(response.content))
+        print("Since no image path have been provided, we take the first image in our dataset.")
         img_name = "brain_02_z15_roi00.jpg"
         directory_path = "/home/mohamad_h/data/40xmosaics_fullsize_subbg/"
         img_path = directory_path + img_name
@@ -114,6 +116,10 @@ if __name__ == '__main__':
         for image, img_path in loader:
             with torch.no_grad():
                 feat, attentions, qkv = model.get_intermediate_feat(image.to(device), n=1)
+
+                
+                
+                
                 torch.cuda.empty_cache()
 
                 
@@ -135,6 +141,30 @@ if __name__ == '__main__':
                 average_attentions = median_filter(average_attentions, size=20)
                 # save original image
                 torchvision.utils.save_image(torchvision.utils.make_grid(image, normalize=True, scale_each=True), os.path.join(output_directory, "img.png"))
+
+
+                # Extract the qkv features of the last attention layer
+                if args.save_feature:
+                    nb_im = attentions[0].shape[0]  # Batch size
+                    nh = attentions[0].shape[1]  # Number of heads
+                    nb_tokens = attentions[0].shape[2]  # Number of tokens
+                    qkv = qkv[0]
+                    q, k, v = qkv[0], qkv[1], qkv[2]
+                    k = k.transpose(1, 2)
+                    k = k.reshape(nb_im, nb_tokens, -1) # 1,6,6644,64 -> 1,6644,6,64 -> 1,6644,384
+                    q = q.transpose(1, 2).reshape(nb_im, nb_tokens, -1)
+                    v = v.transpose(1, 2).reshape(nb_im, nb_tokens, -1)
+                    for f in range(1,k.shape[2]):
+                        print(f"Saving feature {f}")
+                        feature_image = k[0,1:,f]
+                        feature_image = feature_image.reshape(image.shape[-2] // args.patch_size,image.shape[-2] // args.patch_size)
+                        feature_image = feature_image.unsqueeze(0).unsqueeze(0)
+                        feature_image = nn.functional.interpolate(feature_image, scale_factor=args.patch_size, mode="nearest").cpu().numpy()
+                        feature_image = feature_image.squeeze(0).squeeze(0)
+                        create_dir(os.path.join(output_directory, "features"))
+                        plt.imsave(fname=os.path.join(output_directory, F"features/{f}.png"), arr=feature_image, format='png', cmap="gray")
+
+
                 # save attention maps for each head
                 for j in range(nh):
                     fname = os.path.join(output_directory, "attn-head" + str(j) + ".png")
@@ -149,6 +179,42 @@ if __name__ == '__main__':
                     threshold(original_img, average_attentions, output_directory)
                     binary = yen_threshold(original_img, output_directory, save=True)
                     query_points = morphology_cleaning(binary, output_directory, save=True)
+                    queried_attention_maps = []
+                    px = 1/plt.rcParams['figure.dpi']  # pixel in inches
+
+                    for q in range(len(query_points)):
+                        
+                        print(f"query: {q}")
+                        query = query_points[q][0]//args.patch_size * w_featmap + query_points[q][1]//args.patch_size
+                        query = int(query)
+                        x = query // w_featmap
+                        y = query % w_featmap
+                        attentions_reshaped, nh = compute_attention(attentions, query, w_featmap, h_featmap, args.patch_size)
+                        average_attentions = np.mean(attentions_reshaped, axis=0)
+                        queried_attention_maps.append(average_attentions)
+                        if(args.save_query):
+                            queries_output_dir = output_directory + "queries/"
+                            create_dir(queries_output_dir)
+                            fname = os.path.join(queries_output_dir, f"attn-average-query-{q}.png")
+                            fig, ax = plt.subplots(figsize=(800*px, 800*px))
+                            ax.axis('off')   
+                            ax.imshow(average_attentions, aspect='auto')
+                            if query != 0: 
+                                square = patches.Rectangle((x*args.patch_size,y*args.patch_size), 8,8, color='RED')
+                                ax.add_patch(square)
+                            fig.savefig(fname ,bbox_inches='tight', pad_inches=0)
+                            plt.close(fig)
+                    average_queried_attention_maps = np.mean(queried_attention_maps, axis=0)
+                    average_queried_median = median_filter(average_queried_attention_maps, size=20)
+                    if query_points == []:
+                        print("No query points found.")
+                    else:
+                        fname = os.path.join(output_directory, "attn-average-queried.png")
+                        plt.imsave(fname=fname, arr=average_queried_attention_maps, format='png')
+                        fname = os.path.join(output_directory, "attn-average-queried-median.png")
+                        plt.imsave(fname=fname, arr=average_queried_median, format='png')
+                        threshold(original_img, average_queried_median, output_directory, save=True, name="attn-average-queried-threshold")
+
                 # save query analysis
                 if args.query_analysis:
                     path = args.output_dir + image_name + "/analysis/"
@@ -234,54 +300,30 @@ if __name__ == '__main__':
 
 
                 if args.query_analysis:
-                    # path = args.output_dir + image_name + "/analysis/"
-                    # create_dir(path)
-                    # print("Saving query analysis")
-                    # px = 1/plt.rcParams['figure.dpi']  # pixel in inches
-                    
-                    # for i in range(0, w_featmap//args.query_rate):
-                    #     for j in range(0, h_featmap//args.query_rate):
-                    #         query = i * w_featmap*args.query_rate + j*args.query_rate
-                    #         print("path index " + query)
-                    #         attentions_reshaped, nh = compute_attention(attentions, query, w_featmap, h_featmap, args.patch_size)
-                    #         average_attentions = np.mean(attentions_reshaped, axis=0) 
-                    #         fname = os.path.join(path, f"attn-average-{query}.png")
-                    #         fig, ax = plt.subplots(figsize=(args.image_size[0]*px, args.image_size[0]*px))
-                    #         ax.axis('off')   
-                    #         ax.imshow(average_attentions, aspect='auto')
-                    #         if query != 0: 
-                    #             square = patches.Rectangle((j*args.patch_size*args.query_rate,i*args.patch_size*args.query_rate), 8,8, color='RED')
-                    #             ax.add_patch(square)
-                    #         fig.savefig(fname ,bbox_inches='tight', pad_inches=0)
-                    #         plt.close(fig)
-                    # print("finished saving query analysis")
                     print("Query analysis not supported for croped images")
         return
 
+if os.path.isfile(img_path):
+    train_x = sorted(glob(img_path))
+else:
+    train_x = sorted(glob(img_path + "/*.jpg"))    
+batch_size = 1
 
-
-
-    if os.path.isfile(img_path):
-        train_x = sorted(glob(img_path))
+start_time = time.time()
+if(args.crop > 1):
+    if args.crop != 4 and args.crop != 16:
+        print("crop must be 4 or 16")
     else:
-        train_x = sorted(glob(img_path + "/*.jpg"))    
-    batch_size = 1
-    
-    start_time = time.time()
-    if(args.crop > 1):
-        if args.crop != 4 and args.crop != 16:
-            print("crop must be 4 or 16")
-        else:
-            transformed_dataset = Croped_Dataset(train_x,croped_transform, args.crop,args.image_size)
-            dl = DataLoader(transformed_dataset , batch_size=batch_size, shuffle=False, num_workers=1, pin_memory=True)
-            train_croped(model, dl, device)
-    else:
-        transformed_dataset  = AIP_Dataset(train_x,transform)
+        transformed_dataset = Croped_Dataset(train_x,croped_transform, args.crop,args.image_size)
         dl = DataLoader(transformed_dataset , batch_size=batch_size, shuffle=False, num_workers=1, pin_memory=True)
-        train(model, dl, device)
+        train_croped(model, dl, device)
+else:
+    transformed_dataset  = AIP_Dataset(train_x,transform)
+    dl = DataLoader(transformed_dataset , batch_size=batch_size, shuffle=False, num_workers=1, pin_memory=True)
+    train(model, dl, device)
 
-    end_time = time.time()
-    excution_mins, execution_secs = execution_time(start_time, end_time)
-    print(f"Execution time: {excution_mins}m {execution_secs}s")
+end_time = time.time()
+excution_mins, execution_secs = execution_time(start_time, end_time)
+print(f"Execution time: {excution_mins}m {execution_secs}s")
 
     

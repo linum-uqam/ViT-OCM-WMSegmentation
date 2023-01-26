@@ -40,7 +40,7 @@ def execution_time(start_time, end_time):
     1- OTSU thresholding on the attention map * original image
     2- OTSU thresholding on the original image
 """
-def threshold(img , attention, output_directory,save = True):
+def threshold(img , attention, output_directory,save = True, name = None):
     # multipli img with average attention
     result = img * attention / np.max(attention)
     # save result
@@ -52,7 +52,12 @@ def threshold(img , attention, output_directory,save = True):
     # apply OTSU thresholding to the average result with opencv
     ret , th = cv2.threshold(result, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     ret2, th2 = cv2.threshold( np.array(img), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_TRIANGLE)
-    fname = os.path.join(output_directory, "OTSU_th" + "_average.png")
+    if name is not None:
+        file_name = name + "/"
+        create_dir(os.path.join(output_directory,file_name))
+    else:
+        file_name = ""
+    fname = os.path.join(output_directory,file_name, "OTSU_th" + "_average.png")
     # save as black and white cmap
     if save:
         plt.imsave(fname=fname, arr=th, format='png', cmap='gray')
@@ -104,15 +109,22 @@ def morphology_cleaning(img, output_directory, save = True):
             minr, minc, maxr, maxc = region.bbox
             rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr,
                                     fill=False, edgecolor='red', linewidth=2)
-            circle = mpatches.Circle((x0, y0), radius=2, fill=True, color='white')
+            # circle = mpatches.Circle((x0, y0), radius=2, fill=True, color='white')
+            ax.plot(x0, y0, color = 'white', markersize=10,marker = 'x')
             ax.add_patch(rect)
-            ax.add_patch(circle)
+            # ax.add_patch(circle)
             points.append((x0, y0))
 
 
     ax.set_axis_off()
     plt.tight_layout()
     plt.show()
+    plt.gca().set_axis_off()
+    plt.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, 
+                hspace = 0, wspace = 0)
+    plt.margins(0,0)
+    plt.gca().xaxis.set_major_locator(plt.NullLocator())
+    plt.gca().yaxis.set_major_locator(plt.NullLocator())
     plt.savefig(os.path.join(output_directory, "morphology_cleaning_boxes" + ".png"),bbox_inches='tight', pad_inches=0)
 
 

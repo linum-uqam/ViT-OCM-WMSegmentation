@@ -4,6 +4,14 @@ import torch
 from torch.utils.data import Dataset
 from os.path import join
 from utils import seeding
+import torchvision.transforms as T
+import os
+import cv2
+import copy
+from torch.utils.data import DataLoader
+from torch.utils.data._utils.collate import default_collate
+from torchvision.datasets import ImageFolder
+
 
 
 class AIP_Dataset(Dataset):
@@ -58,3 +66,102 @@ class Croped_Dataset(Dataset):
 
     def __len__(self):
         return self.n_samples
+
+
+class MaskGenerator:
+    def __init__(self, input_size=192, mask_patch_size=32, model_patch_size=4, mask_ratio=0.6):
+        self.input_size = input_size
+        self.mask_patch_size = mask_patch_size
+        self.model_patch_size = model_patch_size
+        self.mask_ratio = mask_ratio
+        
+        assert self.input_size % self.mask_patch_size == 0
+        assert self.mask_patch_size % self.model_patch_size == 0
+        
+        self.rand_size = self.input_size // self.mask_patch_size
+        self.scale = self.mask_patch_size // self.model_patch_size
+        
+        self.token_count = self.rand_size ** 2
+        self.mask_count = int(np.ceil(self.token_count * self.mask_ratio))
+        
+    def __call__(self):
+        mask_idx = np.random.permutation(self.token_count)[:self.mask_count]
+        mask = np.zeros(self.token_count, dtype=int)
+        mask[mask_idx] = 1
+        
+        mask = mask.reshape((self.rand_size, self.rand_size))
+        mask = mask.repeat(self.scale, axis=0).repeat(self.scale, axis=1)
+        
+        return mask
+
+
+class SimMIMTransform:
+    def __init__(self, args):
+        self.transform_img = T.Compose([
+            T.Lambda(lambda img: img.convert('RGB') if img.mode != 'RGB' else img),
+            T.RandomResizedCrop(args.image_size, scale=(0.67, 1.), ratio=(3. / 4., 4. / 3.)),
+            T.RandomHorizontalFlip(),
+            T.ToTensor(),
+        ])
+ 
+        
+        model_patch_size=args.patch_size
+        
+        self.mask_generator = MaskGenerator(
+            input_size=args.image_size[0],
+            mask_patch_size=args.mask_patch_size,
+            model_patch_size=model_patch_size,
+            mask_ratio=args.mask_ratio,
+        )
+    
+    def __call__(self, img):
+        img = self.transform_img(img)
+        mask = self.mask_generator()
+        scaled_mask = copy.deepcopy(mask)
+        # 14*14 -> 224*224
+        scaled_mask = np.repeat(scaled_mask, 16, axis=0).repeat(16, axis=1)
+        # to image
+        scaled_mask = scaled_mask * 255
+        scaled_mask = scaled_mask.astype(np.uint8)
+        scaled_mask = cv2.resize(scaled_mask, (224, 224), interpolation=cv2.INTER_NEAREST)
+        # convert img to numpy
+        source = copy.deepcopy(img)
+        source = source.numpy()
+        source = np.transpose(source, (1, 2, 0))
+        source = source * 255
+        source = source.astype(np.uint8)
+        #save 
+        cv2.imwrite(os.path.join("/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/", "img.png"), source)
+        # save in output folder
+        cv2.imwrite(os.path.join("/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/", "mask.png"), scaled_mask)
+
+
+        return img, mask
+
+
+def collate_fn(batch):
+    if not isinstance(batch[0][0], tuple):
+        return default_collate(batch)
+    else:
+        batch_num = len(batch)
+        ret = []
+        for item_idx in range(len(batch[0][0])):
+            if batch[0][0][item_idx] is None:
+                ret.append(None)
+            else:
+                ret.append(default_collate([batch[i][0][item_idx] for i in range(batch_num)]))
+        ret.append(default_collate([batch[i][1] for i in range(batch_num)]))
+        return ret
+
+
+def build_loader_simmim(args):
+    transform = SimMIMTransform(args)
+    # logger.info(f'Pre-train data transform:\n{transform}')
+
+    dataset = ImageFolder(args.image_path, transform)
+    # logger.info(f'Build dataset: train images = {len(dataset)}')
+    
+    # sampler = DistributedSampler(dataset, shuffle=True)
+    dataloader = DataLoader(dataset, args.batch_size, num_workers=args.num_workers, pin_memory=True, drop_last=True, collate_fn=collate_fn)
+    
+    return dataloader

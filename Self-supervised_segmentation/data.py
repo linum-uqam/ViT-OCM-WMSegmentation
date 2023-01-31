@@ -96,22 +96,23 @@ class MaskGenerator:
 
 
 class SimMIMTransform:
+
     def __init__(self, args):
         self.transform_img = T.Compose([
             T.Lambda(lambda img: img.convert('RGB') if img.mode != 'RGB' else img),
-            T.RandomResizedCrop(args.image_size, scale=(0.67, 1.), ratio=(3. / 4., 4. / 3.)),
+            T.RandomResizedCrop(args.DATA.IMG_SIZE, scale=(0.67, 1.), ratio=(3. / 4., 4. / 3.)),
             T.RandomHorizontalFlip(),
             T.ToTensor(),
         ])
  
         
-        model_patch_size=args.patch_size
-        
+        model_patch_size=args.MODEL.PATCH_SIZE
+        self.image_size = args.DATA.IMG_SIZE[0]
         self.mask_generator = MaskGenerator(
-            input_size=args.image_size[0],
-            mask_patch_size=args.mask_patch_size,
+            input_size=args.DATA.IMG_SIZE[0],
+            mask_patch_size=args.DATA.MASK_PATCH_SIZE,
             model_patch_size=model_patch_size,
-            mask_ratio=args.mask_ratio,
+            mask_ratio=args.DATA.MASK_RATIO,
         )
     
     def __call__(self, img):
@@ -123,7 +124,7 @@ class SimMIMTransform:
         # to image
         scaled_mask = scaled_mask * 255
         scaled_mask = scaled_mask.astype(np.uint8)
-        scaled_mask = cv2.resize(scaled_mask, (224, 224), interpolation=cv2.INTER_NEAREST)
+        scaled_mask = cv2.resize(scaled_mask, (self.image_size, self.image_size), interpolation=cv2.INTER_NEAREST)
         # convert img to numpy
         source = copy.deepcopy(img)
         source = source.numpy()
@@ -158,10 +159,10 @@ def build_loader_simmim(args):
     transform = SimMIMTransform(args)
     # logger.info(f'Pre-train data transform:\n{transform}')
 
-    dataset = ImageFolder(args.image_path, transform)
+    dataset = ImageFolder(args.DATA.IMAGE_PATH, transform)
     # logger.info(f'Build dataset: train images = {len(dataset)}')
     
     # sampler = DistributedSampler(dataset, shuffle=True)
-    dataloader = DataLoader(dataset, args.batch_size, num_workers=args.num_workers, pin_memory=True, drop_last=True, collate_fn=collate_fn)
+    dataloader = DataLoader(dataset, args.DATA.BATCH_SIZE, num_workers=args.NUM_WORKERS, pin_memory=True, drop_last=True, collate_fn=collate_fn)
     
     return dataloader

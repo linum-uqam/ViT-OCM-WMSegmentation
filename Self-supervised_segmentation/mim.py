@@ -7,10 +7,7 @@ import os
 os.environ['CUDA_VISIBLE_DEVICES'] = "4 , 5"
 import argparse
 import torch
-from torchvision import transforms as pth_transformsmulti
-import dino.vision_transformer as vits
 from torchsummary import summary
-from glob import glob
 from data import build_loader_simmim
 from utils import seeding, create_dir, get_grad_norm, save_checkpoint
 import time
@@ -22,6 +19,8 @@ import time
 import datetime
 from timm.utils import AverageMeter
 from model import MIM, build_model
+import torch.nn as nn
+
 
 def parse_option():
     parser = argparse.ArgumentParser('MIM Pretraining')
@@ -38,8 +37,8 @@ def parse_option():
         help="Path to pretrained weights to load.") #
     parser.add_argument("--checkpoint_key", default="teacher", type=str,
         help='Key to use in the checkpoint (example: "teacher")')
-    parser.add_argument("--image_path", default="/home/mohamad_h/STEGO/STEGO/src/Aips_Guassian+TopHat/imgs/", type=str, help="Path of the image to load.")
-    parser.add_argument("--image_size", default=(400, 400), type=int, nargs="+", help="Resize image.")
+    parser.add_argument("--image_path", default="/home/mohamad_h/data/Data_OCM_ALL/", type=str, help="Path of the image to load.")
+    parser.add_argument("--image_size", default=(336, 336), type=int, nargs="+", help="Resize image.")
     parser.add_argument('--output_dir', default='/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output', help='Path where to save visualizations.')
     parser.add_argument("--threshold", type=float, default=0.1, help="""We visualize masks
         obtained by thresholding the self-attention maps to keep xx% of the mass.""")
@@ -48,7 +47,7 @@ def parse_option():
     parser.add_argument('--epochs', default=1, type=int, help='number of total epochs to run')
     parser.add_argument('--warmup_epochs', default=20, type=int, help='number of warmup epochs to run')
     parser.add_argument('--num_workers', default=1, type=int, help='number of workers')
-    parser.add_argument('--batch_size', default=1, type=int, help='batch size')
+    parser.add_argument('--batch_size', default=6, type=int, help='batch size')
     parser.add_argument('--mask_patch_size', default=16, type=int, help='patch size for the mask')
     parser.add_argument('--mask_ratio', default=0.5, type=float, help='ratio of the mask')
     args = parser.parse_args()
@@ -58,12 +57,15 @@ def parse_option():
 def main(args):
     data_loader_train = build_loader_simmim(args)
     logger.info(f"Creating model:{args.MODEL.NAME}/{args.MODEL.PATCH_SIZE}")
-
+    gpu = 0
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     print(f"Device: {device}")
     encoder = build_model(args)
     model = MIM(encoder=encoder, encoder_stride=16)
-    model.to(device)
+    model = nn.DataParallel(model)
+    torch.cuda.set_device(gpu)
+    model.cuda(gpu)
+    # model.to(device)
     logger.info(str(model))
 
     optimizer = build_pretrain_optimizer(args, model, logger) 
@@ -76,9 +78,9 @@ def main(args):
     logger.info("Start training")
     start_time = time.time()
     for epoch in range(args.TRAIN.START_EPOCH, args.TRAIN.EPOCHS):
-        train_one_epoch(args, model.encoder, data_loader_train, optimizer, epoch, lr_scheduler)
+        train_one_epoch(args, model, data_loader_train, optimizer, epoch, lr_scheduler)
         if epoch % args.SAVE_FREQ == 0 or epoch == (args.TRAIN.EPOCHS - 1):
-            save_checkpoint(args, epoch, model, 0., optimizer, lr_scheduler, logger)
+            save_checkpoint(args, epoch, model.module.encoder, 0., optimizer, lr_scheduler, logger)
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
@@ -96,10 +98,9 @@ def train_one_epoch(config, model, data_loader, optimizer, epoch, lr_scheduler):
 
     start = time.time()
     end = time.time()
-    for idx, (img, mask, _) in enumerate(data_loader):
+    for idx, (img, mask) in enumerate(data_loader): # (img, mask, _)  for ImageFolder
         img = img.cuda(non_blocking=True)
         mask = mask.cuda(non_blocking=True)
-
         loss = model(img, mask)
 
         if config.TRAIN.ACCUMULATION_STEPS > 1:
@@ -108,7 +109,7 @@ def train_one_epoch(config, model, data_loader, optimizer, epoch, lr_scheduler):
                 grad_norm = torch.nn.utils.clip_grad_norm_(optimizer, config.TRAIN.CLIP_GRAD)
             else:
                 grad_norm = get_grad_norm(optimizer)
-            loss.backward()
+            loss.sum().backward()
             if config.TRAIN.CLIP_GRAD:
                 grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), config.TRAIN.CLIP_GRAD)
             else:
@@ -119,7 +120,7 @@ def train_one_epoch(config, model, data_loader, optimizer, epoch, lr_scheduler):
                 lr_scheduler.step_update(epoch * num_steps + idx)
         else:
             optimizer.zero_grad()
-            loss.backward()
+            loss.sum().backward()
             if config.TRAIN.CLIP_GRAD:
                 grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), config.TRAIN.CLIP_GRAD)
             else:
@@ -129,7 +130,7 @@ def train_one_epoch(config, model, data_loader, optimizer, epoch, lr_scheduler):
 
         torch.cuda.synchronize()
 
-        loss_meter.update(loss.item(), img.size(0))
+        loss_meter.update(loss.sum().item(), img.size(0))
         norm_meter.update(grad_norm)
         batch_time.update(time.time() - end)
         end = time.time()

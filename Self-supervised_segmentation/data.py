@@ -11,7 +11,7 @@ import copy
 from torch.utils.data import DataLoader
 from torch.utils.data._utils.collate import default_collate
 from torchvision.datasets import ImageFolder
-
+from glob import glob
 
 
 class AIP_Dataset(Dataset):
@@ -33,6 +33,24 @@ class AIP_Dataset(Dataset):
     def __len__(self):
         return self.n_samples
 
+class AIP_Masked_Dataset(Dataset):
+    def __init__(self, images_path, transform=None):
+
+        self.images_path = images_path
+        self.n_samples = len(images_path)
+        self.transform = transform
+
+    def __getitem__(self, index):
+        """ Reading image """
+        img = Image.open(self.images_path[index]).convert('RGB')
+        img, mask = self.transform(img)
+        w, h = img.shape[1] - img.shape[1] % 8, img.shape[2] - img.shape[2] % 8
+        img = img[:, :w, :h]
+
+        return img, mask
+
+    def __len__(self):
+        return self.n_samples
 class Croped_Dataset(Dataset):
     def __init__(self, images_path, transform=None,crop = 4,image_size = (800,800)):
 
@@ -102,6 +120,7 @@ class SimMIMTransform:
             T.Lambda(lambda img: img.convert('RGB') if img.mode != 'RGB' else img),
             T.RandomResizedCrop(args.DATA.IMG_SIZE, scale=(0.67, 1.), ratio=(3. / 4., 4. / 3.)),
             T.RandomHorizontalFlip(),
+            T.RandomVerticalFlip(),
             T.ToTensor(),
         ])
  
@@ -156,10 +175,15 @@ def collate_fn(batch):
 
 
 def build_loader_simmim(args):
+    if os.path.isfile(args.DATA.IMAGE_PATH):
+        train_x = sorted(glob(args.DATA.IMAGE_PATH))
+    else:
+        train_x = sorted(glob(args.DATA.IMAGE_PATH + "/*.jpg")) 
     transform = SimMIMTransform(args)
     # logger.info(f'Pre-train data transform:\n{transform}')
 
-    dataset = ImageFolder(args.DATA.IMAGE_PATH, transform)
+    # dataset = ImageFolder(args.DATA.IMAGE_PATH, transform)
+    dataset = AIP_Masked_Dataset(train_x, transform)
     # logger.info(f'Build dataset: train images = {len(dataset)}')
     
     # sampler = DistributedSampler(dataset, shuffle=True)

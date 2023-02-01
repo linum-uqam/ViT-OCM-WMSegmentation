@@ -165,3 +165,15 @@ def get_grad_norm(parameters, norm_type=2):
     total_norm = total_norm ** (1. / norm_type)
     return total_norm
 
+def save_checkpoint(config, epoch, model, max_accuracy, optimizer, lr_scheduler, logger):
+    logger.info(str(model))
+    save_state = {'model': model.state_dict(),
+                  'optimizer': optimizer.state_dict(),
+                  'lr_scheduler': lr_scheduler.state_dict(),
+                  'max_accuracy': max_accuracy,
+                  'epoch': epoch,
+                  'config': config}
+    save_path = os.path.join(config.OUTPUT, f'ckpt_epoch_{epoch}.pth')
+    logger.info(f"{save_path} saving......")
+    torch.save(save_state, save_path)
+    logger.info(f"{save_path} saved !!!")

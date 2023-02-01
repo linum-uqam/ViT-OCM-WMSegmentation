@@ -1,5 +1,8 @@
 # git add --all -- ':!images/' ':!AIPs_40X/'
-
+# more augmentations 
+# full training and validation
+# manual segmentations
+# learn the purpose of learning schedule
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = "4 , 5"
 import argparse
@@ -9,7 +12,7 @@ import dino.vision_transformer as vits
 from torchsummary import summary
 from glob import glob
 from data import build_loader_simmim
-from utils import seeding, create_dir, get_grad_norm
+from utils import seeding, create_dir, get_grad_norm, save_checkpoint
 import time
 from config import get_config
 from optimizer import build_pretrain_optimizer
@@ -42,7 +45,7 @@ def parse_option():
         obtained by thresholding the self-attention maps to keep xx% of the mass.""")
     parser.add_argument('--output', default='output', type=str, metavar='PATH',
         help='root of output folder, the full path is <output>/<model_name>/<tag> (default: output)')
-    parser.add_argument('--epochs', default=2, type=int, help='number of total epochs to run')
+    parser.add_argument('--epochs', default=1, type=int, help='number of total epochs to run')
     parser.add_argument('--warmup_epochs', default=20, type=int, help='number of warmup epochs to run')
     parser.add_argument('--num_workers', default=1, type=int, help='number of workers')
     parser.add_argument('--batch_size', default=1, type=int, help='batch size')
@@ -73,10 +76,9 @@ def main(args):
     logger.info("Start training")
     start_time = time.time()
     for epoch in range(args.TRAIN.START_EPOCH, args.TRAIN.EPOCHS):
-
-        train_one_epoch(args, model, data_loader_train, optimizer, epoch, lr_scheduler)
-        # if epoch % config.SAVE_FREQ == 0 or epoch == (config.TRAIN.EPOCHS - 1):
-        #     save_checkpoint(config, epoch, model_without_ddp, 0., optimizer, lr_scheduler, logger)
+        train_one_epoch(args, model.encoder, data_loader_train, optimizer, epoch, lr_scheduler)
+        if epoch % args.SAVE_FREQ == 0 or epoch == (args.TRAIN.EPOCHS - 1):
+            save_checkpoint(args, epoch, model, 0., optimizer, lr_scheduler, logger)
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))

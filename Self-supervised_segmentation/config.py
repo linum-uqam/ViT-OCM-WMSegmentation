@@ -9,7 +9,7 @@
 import os
 import yaml
 from yacs.config import CfgNode as CN
-
+from utils import create_dir
 _C = CN()
 
 # Base config files
@@ -250,7 +250,7 @@ def update_config(config, args):
     
     # output folder
     config.OUTPUT = os.path.join(config.OUTPUT, config.MODEL.NAME, config.TAG)
-
+    create_dir(config.OUTPUT)
     config.freeze()
 
 

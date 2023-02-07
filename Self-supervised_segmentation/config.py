@@ -111,14 +111,14 @@ _C.TRAIN.USE_CHECKPOINT = False
 
 # LR scheduler
 _C.TRAIN.LR_SCHEDULER = CN()
-_C.TRAIN.LR_SCHEDULER.NAME = 'cosine'
+_C.TRAIN.LR_SCHEDULER.NAME = 'multistep'
 # Epoch interval to decay LR, used in StepLRScheduler
 _C.TRAIN.LR_SCHEDULER.DECAY_EPOCHS = 30
 # LR decay rate, used in StepLRScheduler
 _C.TRAIN.LR_SCHEDULER.DECAY_RATE = 0.1
 # Gamma / Multi steps value, used in MultiStepLRScheduler
 _C.TRAIN.LR_SCHEDULER.GAMMA = 0.1
-_C.TRAIN.LR_SCHEDULER.MULTISTEPS = []
+_C.TRAIN.LR_SCHEDULER.MULTISTEPS = [25, 30, 40]
 
 # Optimizer
 _C.TRAIN.OPTIMIZER = CN()
@@ -178,7 +178,7 @@ _C.OUTPUT = ''
 # Tag of experiment, overwritten by command line argument
 _C.TAG = 'default'
 # Frequency to save checkpoint
-_C.SAVE_FREQ = 10
+_C.SAVE_FREQ = 5
 # Frequency to logging info
 _C.PRINT_FREQ = 10
 # Fixed random seed
@@ -246,7 +246,10 @@ def update_config(config, args):
         config.DATA.OUTPUT_DIR = args.output_dir
     if _check_args('tag'):
         config.TAG = args.tag
-    
+    if _check_args('wandb'):
+        config.WANDB = args.wandb
+    if _check_args('loss_operation'):
+        config.LOSS_OPERATION = args.loss_operation
     
     # output folder
     config.OUTPUT = os.path.join(config.OUTPUT, config.MODEL.NAME, config.TAG)

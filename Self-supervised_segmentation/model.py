@@ -9,13 +9,13 @@ from torch.nn import functional as F
 from functools import partial
 
 class VisionTransformerForSimMIM(VisionTransformer):
-    def __init__(self,interpolate_encoding = False, **kwargs):
+    def __init__(self,interpolate_encoding = False,img_size = 224, **kwargs):
         super().__init__(**kwargs)
 
         # assert self.num_classes == 0
 
         self.mask_token = nn.Parameter(torch.zeros(1, 1, self.embed_dim))
-        self.img_size=[400]
+        self.img_size=img_size
         self._trunc_normal_(self.mask_token, std=.02)
         self.interpolate_encoding = interpolate_encoding
 
@@ -24,7 +24,7 @@ class VisionTransformerForSimMIM(VisionTransformer):
 
     def forward(self, x, mask):
         x = self.patch_embed(x)
-
+        
         assert mask is not None
         B, L, _ = x.shape
 
@@ -35,7 +35,7 @@ class VisionTransformerForSimMIM(VisionTransformer):
         cls_tokens = self.cls_token.expand(B, -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
         x = torch.cat((cls_tokens, x), dim=1)
         
-        if self.interpolate_encoding:
+        if self.img_size[0] != 224: #and self.interpolate_encoding
             x  = x  + self.interpolate_pos_encoding(x , self.img_size[0], self.img_size[0])
         else:
             x = x + self.pos_embed
@@ -56,7 +56,7 @@ class MIM(nn.Module):
     def __init__(self, encoder, encoder_stride):
         super().__init__()
         self.encoder = encoder
-        self.encoder_stride = 8
+        self.encoder_stride = encoder_stride
 
         self.decoder = nn.Sequential(
             nn.Conv2d(
@@ -96,14 +96,11 @@ def build_model(args):
             depth=12, 
             num_heads=6, 
             mlp_ratio=4,
-            img_size=[224],
+            img_size=[args.DATA.IMG_SIZE[0]],
             qkv_bias=True, 
             norm_layer=partial(nn.LayerNorm, eps=1e-6),
             interpolate_encoding=True,
             )
-
-
-    # encoder = vits.__dict__[args.MODEL.NAME](patch_size=args.MODEL.PATCH_SIZE, num_classes=0)
 
     state_dict = get_state_dict(args)
     encoder.load_state_dict(state_dict, strict=False)

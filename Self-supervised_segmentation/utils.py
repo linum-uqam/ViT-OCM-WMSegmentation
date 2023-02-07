@@ -166,7 +166,6 @@ def get_grad_norm(parameters, norm_type=2):
     return total_norm
 
 def save_checkpoint(config, epoch, model, max_accuracy, optimizer, lr_scheduler, logger):
-    logger.info(str(model))
     save_state = {'model': model.state_dict(),
                   'optimizer': optimizer.state_dict(),
                   'lr_scheduler': lr_scheduler.state_dict(),

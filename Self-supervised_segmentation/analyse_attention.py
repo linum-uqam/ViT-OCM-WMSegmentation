@@ -1,10 +1,7 @@
 
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = "5"
-import sys
 import argparse
-import cv2
-import requests
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
@@ -13,10 +10,7 @@ from torchvision import transforms as pth_transforms
 import numpy as np
 from PIL import Image
 import dino.vision_transformer as vits
-from skimage import io
 import matplotlib.patches as patches
-from torchsummary import summary
-import copy
 from data import AIP_Dataset, Croped_Dataset
 from scipy.ndimage import median_filter
 from torch.utils.data import DataLoader
@@ -24,29 +18,29 @@ from glob import glob
 from utils import threshold, compute_attention,create_dir, execution_time,concat_crops, yen_threshold, morphology_cleaning
 import time
 
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Visualize Self-Attention maps')
     parser.add_argument('--arch', default='vit_small', type=str,
         choices=['vit_tiny', 'vit_small', 'vit_base'], help='Architecture (support only ViT atm).')
     parser.add_argument('--patch_size', default=8, type=int, help='Patch resolution of the model.')
-    parser.add_argument('--pretrained_weights', default='./checkpoints/model.pth', type=str,
+    parser.add_argument('--pretrained_weights', default='/home/mohamad_h/output/vit_small/AIP+M_224_multistepLR_60B_meanL/ckpt_epoch_25.pth', type=str,
         help="Path to pretrained weights to load.")
     parser.add_argument("--checkpoint_key", default="teacher", type=str,
         help='Key to use in the checkpoint (example: "teacher")')
-    parser.add_argument("--image_path", default=None, type=str, help="Path of the image to load.")
-    parser.add_argument("--image_size", default=(720, 720), type=int, nargs="+", help="Resize image.")
-    parser.add_argument('--output_dir', default='/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/images/', help='Path where to save visualizations.')
+    parser.add_argument("--image_path", default="/home/mohamad_h/STEGO/STEGO/src/Aips_Guassian+TopHat/imgs/train/", type=str, help="Path of the image to load.")
+    parser.add_argument("--image_size", default=(384, 384), type=int, nargs="+", help="Resize image.")
+    parser.add_argument('--output_dir', default='/home/mohamad_h/LINUM/Results/AIPs/', help='Path where to save visualizations.')
     parser.add_argument("--threshold", type=float, default=0.1, help="""We visualize masks
         obtained by thresholding the self-attention maps to keep xx% of the mass.""")
     # Boolyan for croping 
-    parser.add_argument("--crop", type=int, default=1, help="""Amount of croping (4 or 16)""")
+    parser.add_argument("--crop", type=int, default=16, help="""Amount of croping (4 or 16)""")
     # Attention query analysis mode boolean
+    parser.add_argument("--region_query", type=bool, default=False, help="""To analyze the attention query or not""")
     parser.add_argument("--query_analysis", type=bool, default=False, help="""To analyze the attention query or not""")
     # query rate parameter defaul is 10
     parser.add_argument("--query_rate", type=int, default=10, help="""Rate of the query analysis""")
     # boolean to save the queried attention maps with the target points
-    parser.add_argument("--save_query", type=bool, default=True, help="""To save the queried attention maps with the target points""")
+    parser.add_argument("--save_query", type=bool, default=False, help="""To save the queried attention maps with the target points""")
     # boolean to save the feature maps
     parser.add_argument("--save_feature", type=bool, default=False, help="""To save the feature maps""")
     args = parser.parse_args()
@@ -60,6 +54,7 @@ if __name__ == '__main__':
         p.requires_grad = False
     model.eval()
     model.to(device)
+
     if os.path.isfile(args.pretrained_weights):
         state_dict = torch.load(args.pretrained_weights, map_location="cpu")
         if args.checkpoint_key is not None and args.checkpoint_key in state_dict:
@@ -69,7 +64,7 @@ if __name__ == '__main__':
         state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
         # remove `backbone.` prefix induced by multicrop wrapper
         state_dict = {k.replace("backbone.", ""): v for k, v in state_dict.items()}  
-        msg = model.load_state_dict(state_dict)
+        msg = model.load_state_dict(state_dict["model"], strict=False)
         print('Pretrained weights found at {} and loaded with msg: {}'.format(args.pretrained_weights, msg))
     else:
         print("Please use the `--pretrained_weights` argument to indicate the path of the checkpoint to evaluate.")
@@ -116,13 +111,7 @@ if __name__ == '__main__':
         for image, img_path in loader:
             with torch.no_grad():
                 feat, attentions, qkv = model.get_intermediate_feat(image.to(device), n=1)
-
-                
-                
-                
                 torch.cuda.empty_cache()
-
-                
                 original_img = Image.open(img_path[0]).convert('RGB')
                 # resize to ars.image_size
                 original_img = original_img.resize(args.image_size, Image.Resampling.BICUBIC)
@@ -138,7 +127,7 @@ if __name__ == '__main__':
                 # average attentions over heads
                 average_attentions = np.mean(attention_response, axis=0)
                 # median filter scipy
-                average_attentions = median_filter(average_attentions, size=20)
+                average_attentions = median_filter(average_attentions, size=10)
                 # save original image
                 torchvision.utils.save_image(torchvision.utils.make_grid(image, normalize=True, scale_each=True), os.path.join(output_directory, "img.png"))
 
@@ -177,43 +166,44 @@ if __name__ == '__main__':
                 # save thresholded attention
                 if args.threshold is not None:
                     threshold(original_img, average_attentions, output_directory)
-                    binary = yen_threshold(original_img, output_directory, save=True)
-                    query_points = morphology_cleaning(binary, output_directory, save=True)
-                    queried_attention_maps = []
-                    px = 1/plt.rcParams['figure.dpi']  # pixel in inches
+                    if args.region_query:
+                        binary = yen_threshold(original_img, output_directory, save=True)
+                        query_points = morphology_cleaning(binary, output_directory, save=True)
+                        queried_attention_maps = []
+                        px = 1/plt.rcParams['figure.dpi']  # pixel in inches
 
-                    for q in range(len(query_points)):
-                        
-                        print(f"query: {q}")
-                        query = query_points[q][0]//args.patch_size * w_featmap + query_points[q][1]//args.patch_size
-                        query = int(query)
-                        x = query // w_featmap
-                        y = query % w_featmap
-                        attentions_reshaped, nh = compute_attention(attentions, query, w_featmap, h_featmap, args.patch_size)
-                        average_attentions = np.mean(attentions_reshaped, axis=0)
-                        queried_attention_maps.append(average_attentions)
-                        if(args.save_query):
-                            queries_output_dir = output_directory + "queries/"
-                            create_dir(queries_output_dir)
-                            fname = os.path.join(queries_output_dir, f"attn-average-query-{q}.png")
-                            fig, ax = plt.subplots(figsize=(800*px, 800*px))
-                            ax.axis('off')   
-                            ax.imshow(average_attentions, aspect='auto')
-                            if query != 0: 
-                                square = patches.Rectangle((x*args.patch_size,y*args.patch_size), 8,8, color='RED')
-                                ax.add_patch(square)
-                            fig.savefig(fname ,bbox_inches='tight', pad_inches=0)
-                            plt.close(fig)
-                    average_queried_attention_maps = np.mean(queried_attention_maps, axis=0)
-                    average_queried_median = median_filter(average_queried_attention_maps, size=20)
-                    if query_points == []:
-                        print("No query points found.")
-                    else:
-                        fname = os.path.join(output_directory, "attn-average-queried.png")
-                        plt.imsave(fname=fname, arr=average_queried_attention_maps, format='png')
-                        fname = os.path.join(output_directory, "attn-average-queried-median.png")
-                        plt.imsave(fname=fname, arr=average_queried_median, format='png')
-                        threshold(original_img, average_queried_median, output_directory, save=True, name="attn-average-queried-threshold")
+                        for q in range(len(query_points)):
+                            
+                            print(f"query: {q}")
+                            query = query_points[q][0]//args.patch_size * w_featmap + query_points[q][1]//args.patch_size
+                            query = int(query)
+                            x = query // w_featmap
+                            y = query % w_featmap
+                            attentions_reshaped, nh = compute_attention(attentions, query, w_featmap, h_featmap, args.patch_size)
+                            average_attentions = np.mean(attentions_reshaped, axis=0)
+                            queried_attention_maps.append(average_attentions)
+                            if(args.save_query):
+                                queries_output_dir = output_directory + "queries/"
+                                create_dir(queries_output_dir)
+                                fname = os.path.join(queries_output_dir, f"attn-average-query-{q}.png")
+                                fig, ax = plt.subplots(figsize=(800*px, 800*px))
+                                ax.axis('off')   
+                                ax.imshow(average_attentions, aspect='auto')
+                                if query != 0: 
+                                    square = patches.Rectangle((x*args.patch_size,y*args.patch_size), 8,8, color='RED')
+                                    ax.add_patch(square)
+                                fig.savefig(fname ,bbox_inches='tight', pad_inches=0)
+                                plt.close(fig)
+                        average_queried_attention_maps = np.mean(queried_attention_maps, axis=0)
+                        average_queried_median = median_filter(average_queried_attention_maps, size=10)
+                        if query_points == []:
+                            print("No query points found.")
+                        else:
+                            fname = os.path.join(output_directory, "attn-average-queried.png")
+                            plt.imsave(fname=fname, arr=average_queried_attention_maps, format='png')
+                            fname = os.path.join(output_directory, "attn-average-queried-median.png")
+                            plt.imsave(fname=fname, arr=average_queried_median, format='png')
+                            threshold(original_img, average_queried_median, output_directory, save=True, name="attn-average-queried-threshold")
 
                 # save query analysis
                 if args.query_analysis:

@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 from torch.utils.data._utils.collate import default_collate
 from torchvision.datasets import ImageFolder
 from glob import glob
-
+from torchvision import transforms as pth_transforms
 
 class AIP_Dataset(Dataset):
     def __init__(self, images_path, transform=None):
@@ -51,6 +51,37 @@ class AIP_Masked_Dataset(Dataset):
 
     def __len__(self):
         return self.n_samples
+
+class AIP_Labeled_Dataset(Dataset):
+    def __init__(self, images_path, label_path, transform=None):
+
+        self.images_path = images_path
+        self.label_path = label_path
+        self.n_samples = len(images_path)
+        assert len(images_path) == len(label_path)
+        self.transform = transform
+
+    def __getitem__(self, index):
+        """ Reading image """
+        try:
+            img = Image.open(self.images_path[index]).convert('RGB')
+            label = Image.open(self.label_path[index]).convert('L')
+            img = self.transform(img)
+            label = self.transform(label)
+            w, h = img.shape[1] - img.shape[1] % 8, img.shape[2] - img.shape[2] % 8
+            img = img[:, :w, :h]
+            label = label[:, :w, :h]
+
+            return img, label
+        except:
+            print("Error reading image: ", self.images_path[index])
+            print("Error reading label: ", self.label_path[index])
+            return None, None
+
+    def __len__(self):
+        return self.n_samples
+
+
 class Croped_Dataset(Dataset):
     def __init__(self, images_path, transform=None,crop = 4,image_size = (800,800)):
 
@@ -180,13 +211,30 @@ def build_loader_simmim(args):
     else:
         train_x = sorted(glob(args.DATA.IMAGE_PATH + "/*.jpg")) 
     transform = SimMIMTransform(args)
-    # logger.info(f'Pre-train data transform:\n{transform}')
-
-    # dataset = ImageFolder(args.DATA.IMAGE_PATH, transform)
     dataset = AIP_Masked_Dataset(train_x, transform)
-    # logger.info(f'Build dataset: train images = {len(dataset)}')
-    
-    # sampler = DistributedSampler(dataset, shuffle=True)
     dataloader = DataLoader(dataset, args.DATA.BATCH_SIZE, num_workers=args.NUM_WORKERS, pin_memory=True, drop_last=True, collate_fn=collate_fn)
+    
+    return dataloader
+
+def build_eval_loader(args):
+
+    images = sorted(glob(args.image_path + "/images/*.jpg")) 
+    labels = sorted(glob(args.image_path + "/labels/*.png"))
+    if args.crop > 1:
+        if args.crop != 4 and args.crop != 16:
+            print("crop must be 4 or 16")
+            exit()
+        else:
+            transform = pth_transforms.Compose([
+                pth_transforms.Resize((args.image_size[0]//np.int8(np.sqrt(args.crop)), args.image_size[1]//np.int8(np.sqrt(args.crop)))),
+                pth_transforms.ToTensor(),
+            ])
+    else:
+        transform = pth_transforms.Compose([
+            pth_transforms.Resize(args.image_size, interpolation  = pth_transforms.InterpolationMode.NEAREST),
+            pth_transforms.ToTensor(),
+        ])
+    dataset = AIP_Labeled_Dataset(images, labels ,transform)
+    dataloader = DataLoader(dataset, args.batch_size, num_workers=1, pin_memory=True, drop_last=True, collate_fn=collate_fn)
     
     return dataloader

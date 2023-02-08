@@ -40,8 +40,9 @@ def execution_time(start_time, end_time):
     1- OTSU thresholding on the attention map * original image
     2- OTSU thresholding on the original image
 """
-def threshold(img , attention, output_directory,save = True, name = None):
+def threshold(img , attention, output_directory = "",save = True, name = None):
     # multipli img with average attention
+    # img = np.permute(img, (1,2,0))
     result = img * attention / np.max(attention)
     # save result
     fname = os.path.join(output_directory, "result.png")
@@ -176,3 +177,4 @@ def save_checkpoint(config, epoch, model, max_accuracy, optimizer, lr_scheduler,
     logger.info(f"{save_path} saving......")
     torch.save(save_state, save_path)
     logger.info(f"{save_path} saved !!!")
+    

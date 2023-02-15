@@ -1,0 +1,225 @@
+{
+    "os": "Linux-4.15.0-202-generic-x86_64-with-glibc2.27",
+    "python": "3.9.16",
+    "heartbeatAt": "2023-02-08T02:04:53.008351",
+    "startedAt": "2023-02-08T02:04:50.608889",
+    "docker": null,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/main.py",
+    "codePath": "Self-supervised_segmentation/main.py",
+    "git": {
+        "remote": "https://github.com/linum-uqam/maitrise-mohamad-hawchar",
+        "commit": "da0f264bdf717e71630ba62ad2dea16447340784"
+    },
+    "email": "mohamad_hawchar@hotmail.com",
+    "root": "/home/mohamad_h/LINUM/maitrise-mohamad-hawchar",
+    "host": "calcul-info-uqam-ca",
+    "username": "mohamad_h",
+    "executable": "/usr/bin/python",
+    "cpu_count": 16,
+    "cpu_count_logical": 32,
+    "cpu_freq": {
+        "current": 1957.36975,
+        "min": 1200.0,
+        "max": 2100.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 2097.301,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 2099.329,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 2098.51,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 2099.612,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 2096.793,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 2097.422,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 2063.411,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 1953.287,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 1948.487,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 1879.387,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 2099.934,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 2098.797,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 1662.936,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 1946.774,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 1588.601,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 1863.966,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 2096.431,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 2095.844,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 2095.831,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 2096.018,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 2095.818,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 2097.171,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 1920.495,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 1787.67,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 1718.217,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 1621.607,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 2095.701,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 2096.547,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 1363.257,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 1774.276,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 1977.902,
+            "min": 1200.0,
+            "max": 2100.0
+        },
+        {
+            "current": 2008.5,
+            "min": 1200.0,
+            "max": 2100.0
+        }
+    ],
+    "disk": {
+        "total": 1759.2390022277832,
+        "used": 1140.5201530456543
+    },
+    "gpu": "GeForce RTX 2080 Ti",
+    "gpu_count": 6,
+    "gpu_devices": [
+        {
+            "name": "GeForce RTX 2080 Ti",
+            "memory_total": 11554717696
+        },
+        {
+            "name": "GeForce RTX 2080 Ti",
+            "memory_total": 11554717696
+        },
+        {
+            "name": "GeForce RTX 2080 Ti",
+            "memory_total": 11554717696
+        },
+        {
+            "name": "GeForce RTX 2080 Ti",
+            "memory_total": 11554717696
+        },
+        {
+            "name": "GeForce RTX 2080 Ti",
+            "memory_total": 11554717696
+        },
+        {
+            "name": "GeForce RTX 2080 Ti",
+            "memory_total": 11554717696
+        }
+    ],
+    "memory": {
+        "total": 125.78068161010742
+    }
+}

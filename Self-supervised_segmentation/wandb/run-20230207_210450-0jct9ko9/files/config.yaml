@@ -1,0 +1,91 @@
+wandb_version: 1
+
+_wandb:
+  desc: null
+  value:
+    cli_version: 0.13.9
+    framework: torch
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    python_version: 3.9.16
+    start_time: 1675821890.624196
+    t:
+      1:
+      - 1
+      - 5
+      - 41
+      - 49
+      - 53
+      - 55
+      - 63
+      2:
+      - 1
+      - 5
+      - 41
+      - 49
+      - 53
+      - 55
+      - 63
+      3:
+      - 1
+      - 2
+      - 13
+      - 16
+      - 23
+      4: 3.9.16
+      5: 0.13.9
+      8:
+      - 5
+arch:
+  desc: null
+  value: vit_small
+batch_size:
+  desc: null
+  value: 1
+checkpoint_key:
+  desc: null
+  value: teacher
+crop:
+  desc: null
+  value: 1
+image_path:
+  desc: null
+  value: /home/mohamad_h/data/AIP_annotated_data/
+image_size:
+  desc: null
+  value:
+  - 384
+  - 384
+output_dir:
+  desc: null
+  value: /home/mohamad_h/LINUM/Results/AIPs_labeled/
+patch_size:
+  desc: null
+  value: 8
+pretrained_weights:
+  desc: null
+  value: /home/mohamad_h/output/vit_small/AIP+M_224_multistepLR_60B_meanL/ckpt_epoch_25.pth
+query_analysis:
+  desc: null
+  value: false
+query_rate:
+  desc: null
+  value: 10
+region_query:
+  desc: null
+  value: false
+save_feature:
+  desc: null
+  value: false
+save_query:
+  desc: null
+  value: false
+tag:
+  desc: null
+  value: AIPs
+threshold:
+  desc: null
+  value: 0.1
+wandb:
+  desc: null
+  value: true

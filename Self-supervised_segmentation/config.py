@@ -240,8 +240,12 @@ def update_config(config, args):
         config.MODEL.CHECKPOINT_KEY = args.checkpoint_key
     if _check_args('image_path'):
         config.DATA.IMAGE_PATH = args.image_path
+    if _check_args('eval_dataset_path'):
+        config.eval_dataset_path = args.eval_dataset_path
     if _check_args('image_size'):
         config.DATA.IMG_SIZE = args.image_size
+    if _check_args('image_size'):
+        config.image_size = args.image_size
     if _check_args('output_dir'):
         config.DATA.OUTPUT_DIR = args.output_dir
     if _check_args('tag'):

@@ -5,16 +5,15 @@ import torch
 import numpy as np
 import dino.vision_transformer as vits
 from scipy.ndimage import median_filter
-from utils import threshold, compute_attention,create_dir, seeding
+from utils import threshold, compute_attention,create_dir, seeding, kmeans, concat_crops, chan_vese, calculate_metrics
 import time
 from logger import create_logger
 from data import build_eval_loader
 import wandb
-from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
-from timm.utils import accuracy, AverageMeter
+from timm.utils import AverageMeter
 import torchvision.transforms as T
 import torch.nn as nn 
-from sklearn.metrics import accuracy_score, f1_score, jaccard_score, precision_score, recall_score, roc_auc_score
+from utils import DiceLoss
 
 def parse_args():
     parser = argparse.ArgumentParser('Visualize Self-Attention maps')
@@ -25,8 +24,8 @@ def parse_args():
         help="Path to pretrained weights to load.")
     parser.add_argument("--checkpoint_key", default="teacher", type=str,
         help='Key to use in the checkpoint (example: "teacher")')
-    parser.add_argument("--image_path", default="/home/mohamad_h/data/AIP_annotated_data/", type=str, help="Path of the image to load.")
-    parser.add_argument("--image_size", default=(384, 384), type=int, nargs="+", help="Resize image.")
+    parser.add_argument("--eval_dataset_path", default="/home/mohamad_h/data/AIP_annotated_data/", type=str, help="Path of the image to load.")
+    parser.add_argument("--image_size", default=(384, 384), type=int, nargs="+", help="Resize image.") #(384, 384)
     parser.add_argument('--output_dir', default='/home/mohamad_h/LINUM/Results/AIPs_labeled/', help='Path where to save visualizations.')
     parser.add_argument("--threshold", type=float, default=0.1, help="""We visualize masks
         obtained by thresholding the self-attention maps to keep xx% of the mass.""")
@@ -41,14 +40,14 @@ def parse_args():
     parser.add_argument("--save_query", type=bool, default=False, help="""To save the queried attention maps with the target points""")
     # boolean to save the feature maps
     parser.add_argument("--save_feature", type=bool, default=False, help="""To save the feature maps""")
-    parser.add_argument("--batch_size", type=int, default=1, help="""Batch size""")
+    parser.add_argument("--batch_size", type=int, default=8, help="""Batch size""")
     parser.add_argument('--wandb', default=False, help='whether to use wandb')
-
+    parser.add_argument('--tag', default='Ours_chan-vese', help='tag for wandb')
+    parser.add_argument('--method', default='ours', help='method to implement: ours, otsu, k-means, k-means_ours, chan-vese')
     args = parser.parse_args()
     return args
 
 def main(args):
-
     data_loader = build_eval_loader(args)
     torch.cuda.empty_cache()
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
@@ -90,16 +89,11 @@ def main(args):
         else:
             print("There is no reference weights available for this model => We use random weights.")
 
-    if args.image_path is None:
+    if args.eval_dataset_path is None:
         # user has not specified any image - we use our own image
-        print("Please use the `--image_path` argument to indicate the path of the image you wish to visualize.")
-        print("Since no image path have been provided, we take the first image in our dataset.")
-        img_name = "brain_02_z15_roi00.jpg"
-        directory_path = "/home/mohamad_h/data/40xmosaics_fullsize_subbg/"
-        img_path = directory_path + img_name
+        print("Please use the `--eval_dataset_path` argument to indicate the path of the dataset you wish to evaluate.")
     else:
-        print(f"Provided image path {args.image_path} will be used.")
-        img_path = args.image_path
+        print(f"Provided image path {args.eval_dataset_path} will be used.")
     
     logger.info(f"Creating model:{args.arch}/{args.patch_size}")
     logger.info(str(model))
@@ -120,39 +114,76 @@ def validate(args, data_loader, model, device):
 
     end = time.time()
     for idx, (images, target) in enumerate(data_loader):
-        images = images.cuda(non_blocking=True)
-        target = target.cuda(non_blocking=True)
+        for i in range(images.shape[0]):
+            img = images[i].unsqueeze(0)
+            img = img.cuda(non_blocking=True)
+            target = target.cuda(non_blocking=True)
 
-        # compute output
-        feat, attentions, qkv = model.get_intermediate_feat(images.to(device), n=1)
-        query = 0
-        w_featmap = images.shape[-2] // args.patch_size
-        h_featmap = images.shape[-1] // args.patch_size
-        attention_response, nh = compute_attention(attentions, query, w_featmap, h_featmap, args.patch_size)
-        # average attentions over heads
-        average_attentions = np.mean(attention_response, axis=0)
-        # median filter scipy
-        average_attentions = median_filter(average_attentions, size=10)
-        output, original_otsu = threshold(transform(images.squeeze(0)).convert("L") , average_attentions, save=False)
-        # output = original_otsu
-        output = torch.tensor(output).unsqueeze(0)
-        output = output/255
-        # target = target.squeeze(0)
-        output = output.unsqueeze(0)
-        output = output.cuda(non_blocking=True)
-        # measure accuracy and record loss
-        loss = criterion(output, target)
-        valid_losses.append(loss.item())
-        sum_loss += loss.item()
-        score_jaccard, score_f1, score_recall, score_precision, score_acc = calculate_metrics(target, output)
+            if args.crop == 1:
+                feat, attentions, qkv = model.get_intermediate_feat(img.to(device), n=1)
+                query = 0
+                w_featmap = img.shape[-2] // args.patch_size
+                h_featmap = img.shape[-1] // args.patch_size
+                attention_response, nh = compute_attention(attentions, query, w_featmap, h_featmap, args.patch_size)
+                # average attentions over heads
+                average_attentions = np.mean(attention_response, axis=0)
+                # median filter scipy
+                average_attentions = median_filter(average_attentions, size=10)
+            else:
+                average_crops = []
+                for j in range(images.shape[1]):
+                    crop = images[i][j].unsqueeze(0)
+                    crop = crop.cuda(non_blocking=True)
+                    feat, attentions, qkv = model.get_intermediate_feat(crop.to(device), n=1)
+                    query = 0
+                    w_featmap = crop.shape[-2] // args.patch_size
+                    h_featmap = crop.shape[-1] // args.patch_size
+                    attention_response, nh = compute_attention(attentions, query, w_featmap, h_featmap, args.patch_size)
+                    # average attentions over heads
+                    average_attentions = np.mean(attention_response, axis=0)
+                    # median filter scipy
+                    average_attentions = median_filter(average_attentions, size=10)
+                    average_crops.append(average_attentions)
+                average_attentions = concat_crops(average_crops)
+                img = concat_crops(images[i,:,0,:,:])
+                img = torch.tensor(img)
+                temp = torch.zeros([1, 3, args.image_size[0], args.image_size[1]], dtype=torch.float32)
+                temp[0][0] = img
+                temp[0][1] = img
+                temp[0][2] = img
+                img = temp
 
-        loss_meter.update(loss.item(), target.size(0))
-        acc_meter.update(score_acc.item(), target.size(0))
-        f1_meter.update(score_f1.item(), target.size(0))
 
-        # measure elapsed time
-        batch_time.update(time.time() - end)
-        end = time.time()
+            if args.method == "otsu" or args.method == "ours":
+                output, original_otsu = threshold(transform(img.squeeze(0)).convert("L") , average_attentions, save=False)
+            if args.method == "otsu":
+                output = original_otsu
+            if args.method == "k-means" or args.method == "k-means_ours":
+                output, output_kmeans = kmeans(transform(img.squeeze(0)).convert("L") , average_attentions, save=False)
+            if args.method == "k-means":
+                output = output_kmeans
+            if args.method == "chan-vese" or args.method == "chan-vese_ours":
+                output, original_cv = chan_vese(transform(img.squeeze(0)).convert("L") , average_attentions, save=False)
+            if args.method == "chan-vese":
+                output = original_cv
+            output = torch.tensor(output).unsqueeze(0)
+            output = output/255
+            # target = target.squeeze(0)
+            output = output.unsqueeze(0)
+            output = output.cuda(non_blocking=True)
+            # measure accuracy and record loss
+            loss = criterion(output, target[i])
+            valid_losses.append(loss.item())
+            sum_loss += loss.item()
+            score_jaccard, score_f1, score_recall, score_precision, score_acc = calculate_metrics(target[i], output)
+
+            loss_meter.update(loss.item(), target.size(0))
+            acc_meter.update(score_acc.item(), target.size(0))
+            f1_meter.update(score_f1.item(), target.size(0))
+
+            # measure elapsed time
+            batch_time.update(time.time() - end)
+            end = time.time()
 
         if idx % 1 == 0:
             memory_used = torch.cuda.max_memory_allocated() / (1024.0 * 1024.0)
@@ -161,50 +192,24 @@ def validate(args, data_loader, model, device):
                 f'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                 f'Loss {loss_meter.val:.4f} ({loss_meter.avg:.4f})\t'
                 f'Acc {acc_meter.val:.3f} ({acc_meter.avg:.3f})\t'
-                f'f1 {f1_meter.val:.3f} ({f1_meter.avg:.3f})\t'
+                f'f1 {f1_meter.val:.3f} ({f1_meter.avg:.3f})\t' 
+                f'prec {score_precision:.3f} ({score_precision:.3f})\t'
+                f'recall {score_recall:.3f} ({score_recall:.3f})\t'
+                f'jaccard {score_jaccard:.3f} ({score_jaccard:.3f})\t'
                 f'Mem {memory_used:.0f}MB')
-    logger.info(f' * Acc_average: {acc_meter.avg:.3f} F1_average {f1_meter.avg:.3f}')
+    logger.info(f' * Acc_average: {acc_meter.avg:.3f} F1_average {f1_meter.avg:.3f} precision {score_precision:.3f} recall {score_recall:.3f} jaccard {score_jaccard:.3f}')
+    if args.crop == 1:
+        img = images
     if args.wandb:
-                wandb.log({"Loss":loss_meter.val, "Acc":acc_meter.avg, "f1" :f1_meter.avg }, step=idx)
+                wandb.log({"Loss":loss_meter.val,
+                 "Acc":acc_meter.avg,
+                 "f1" :f1_meter.avg,
+                 "precision":score_precision,
+                 "recall":score_recall,
+                 "jaccard":score_jaccard,
+                 "input_image": [wandb.Image(img[0][0].cpu().numpy(), caption="Input Image"), wandb.Image(target[i].cpu().numpy(), caption="Target"), wandb.Image(output[0].cpu().numpy(), caption="Output")],
+                 })
     return acc_meter.avg, f1_meter.avg, loss_meter.avg
-
-class DiceLoss(nn.Module):
-    def __init__(self):
-        super(DiceLoss, self).__init__()
-
-    def forward(self, inputs, targets, smooth=1):
-        inputs = torch.sigmoid(inputs)
-
-        #flatten label and prediction tensors
-        inputs = inputs.view(-1)
-        targets = targets.view(-1)
-
-        intersection = (inputs * targets).sum()
-        dice = (2.*intersection + smooth)/(inputs.sum() + targets.sum() + smooth)
-
-        return 1 - dice
-
-def calculate_metrics(y_true, y_pred):
-  
-    """ Ground truth """
-    y_true = y_true.cpu().numpy()
-    y_true = y_true > 0.5
-    y_true = y_true.astype(np.uint8)
-    y_true = y_true.reshape(-1)
-
-    """ Prediction """
-    y_pred = y_pred.cpu().numpy()
-    y_pred = y_pred > 0.5
-    y_pred = y_pred.astype(np.uint8)
-    y_pred = y_pred.reshape(-1)
-
-    score_jaccard = jaccard_score(y_true, y_pred)
-    score_f1 = f1_score(y_true, y_pred)
-    score_recall = recall_score(y_true, y_pred)
-    score_precision = precision_score(y_true, y_pred)
-    score_acc = accuracy_score(y_true, y_pred)
-
-    return [score_jaccard, score_f1, score_recall, score_precision, score_acc]
 
 
 if __name__ == "__main__":
@@ -217,9 +222,10 @@ if __name__ == "__main__":
         wandb.init(
             project="segmentation_evaluatoin",
             entity="mohamad_hawchar",
-            name = args.TAG,
+            name = args.tag,
             config=args
             )
+        args = wandb.config
     main(args)
     if args.wandb:
         wandb.finish()

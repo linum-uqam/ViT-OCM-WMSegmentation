@@ -81,6 +81,48 @@ class AIP_Labeled_Dataset(Dataset):
     def __len__(self):
         return self.n_samples
 
+class AIP_Croped_Labeled_Dataset(Dataset):
+    def __init__(self, images_path, label_path,croped_transform = None, transform=None, crop = 4,image_size = (800,800)):
+
+        self.images_path = images_path
+        self.label_path = label_path
+        self.n_samples = len(images_path)
+        assert len(images_path) == len(label_path)
+        self.transform = transform
+        self.crop_rate = np.int(np.sqrt(crop))
+        self.image_size = image_size
+        self.croped_transform = croped_transform
+
+    def __getitem__(self, index):
+        """ Reading image """
+        img = Image.open(self.images_path[index]).convert('RGB')
+        label = Image.open(self.label_path[index]).convert('L')
+        to_be_croped_img = img.copy()
+        to_be_croped_img = to_be_croped_img.resize(self.image_size)
+        img = self.croped_transform(img)
+        label = self.transform(label)
+        images = []
+            
+        w, h = self.image_size[0] - self.image_size[0] % 8, self.image_size[1] - self.image_size[1] % 8
+        label = label[:, :w, :h]
+        if self.crop_rate == 2:
+            w, h = img.shape[1] - img.shape[1] % 32, img.shape[2] - img.shape[2] % 32
+        else:
+            w, h = img.shape[1] - img.shape[1] % 64, img.shape[2] - img.shape[2] % 64
+        w, h = w // self.crop_rate, h // self.crop_rate
+        # Brake the image into 4 equal crops and stack them in a list of images
+        w, h = to_be_croped_img.size[0] // self.crop_rate, to_be_croped_img.size[1] // self.crop_rate
+        for i in range(self.crop_rate):
+            for j in range(self.crop_rate):
+                x = to_be_croped_img.crop((j * w, i * h, (j + 1) * w, (i + 1) * h))
+                x = self.croped_transform(x)
+                images.append(x)
+        images = torch.stack(images)
+        return images, label
+
+    def __len__(self):
+        return self.n_samples
+
 
 class Croped_Dataset(Dataset):
     def __init__(self, images_path, transform=None,crop = 4,image_size = (800,800)):
@@ -218,23 +260,21 @@ def build_loader_simmim(args):
 
 def build_eval_loader(args):
 
-    images = sorted(glob(args.image_path + "/images/*.jpg")) 
-    labels = sorted(glob(args.image_path + "/labels/*.png"))
+    images = sorted(glob(args.eval_dataset_path + "/images/*.jpg")) 
+    labels = sorted(glob(args.eval_dataset_path + "/labels/*.png"))
+    croped_transform = pth_transforms.Compose([
+        pth_transforms.Resize((args.image_size[0]//np.int8(np.sqrt(args.crop)), args.image_size[1]//np.int8(np.sqrt(args.crop))), interpolation  = pth_transforms.InterpolationMode.NEAREST),
+        pth_transforms.ToTensor(),
+    ])
+    
+    transform = pth_transforms.Compose([
+        pth_transforms.Resize(args.image_size, interpolation  = pth_transforms.InterpolationMode.NEAREST),
+        pth_transforms.ToTensor(),
+    ])
     if args.crop > 1:
-        if args.crop != 4 and args.crop != 16:
-            print("crop must be 4 or 16")
-            exit()
-        else:
-            transform = pth_transforms.Compose([
-                pth_transforms.Resize((args.image_size[0]//np.int8(np.sqrt(args.crop)), args.image_size[1]//np.int8(np.sqrt(args.crop)))),
-                pth_transforms.ToTensor(),
-            ])
+        dataset = AIP_Croped_Labeled_Dataset(images, labels, croped_transform = croped_transform, transform = transform, image_size=(args.image_size[0], args.image_size[1]), crop=args.crop)
     else:
-        transform = pth_transforms.Compose([
-            pth_transforms.Resize(args.image_size, interpolation  = pth_transforms.InterpolationMode.NEAREST),
-            pth_transforms.ToTensor(),
-        ])
-    dataset = AIP_Labeled_Dataset(images, labels ,transform)
+        dataset = AIP_Labeled_Dataset(images, labels , transform = transform)
     dataloader = DataLoader(dataset, args.batch_size, num_workers=1, pin_memory=True, drop_last=True, collate_fn=collate_fn)
     
     return dataloader

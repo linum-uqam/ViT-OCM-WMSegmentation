@@ -5,7 +5,7 @@ os.environ['CUDA_VISIBLE_DEVICES'] = "0 , 1 , 2"
 import argparse
 import torch
 from torchsummary import summary
-from data import build_loader_simmim
+from data import build_loader_simmim, build_eval_loader
 from utils import seeding, create_dir, get_grad_norm, save_checkpoint
 import time
 from config import get_config
@@ -18,6 +18,7 @@ from timm.utils import AverageMeter
 from model import MIM, build_model
 import torch.nn as nn
 import wandb
+from eval import validate
 # import torch_geometric
 
 def parse_option():
@@ -49,6 +50,7 @@ def parse_option():
     parser.add_argument('--tag', default='AIP+M_224_multistepLR_60B_meanL', type=str, help='tag of the experiment')
     parser.add_argument('--wandb', default=True, help='whether to use wandb')
     parser.add_argument('--loss_operation', default='max', type=str, help='mean or sum or max')
+    parser.add_argument("--eval_dataset_path", default="/home/mohamad_h/data/AIP_annotated_data/", help="evaluate the model on the given dataset")
     args = parser.parse_args()
     args = get_config(args)
     return args
@@ -63,6 +65,7 @@ def main(args):
             config=args
             )
     data_loader_train = build_loader_simmim(args)
+    data_loader = build_eval_loader(args)
     logger.info(f"Creating model:{args.MODEL.NAME}/{args.MODEL.PATCH_SIZE}")
     gpu = 0
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
@@ -72,16 +75,11 @@ def main(args):
     model = nn.DataParallel(model)
     torch.cuda.set_device(gpu)
     model.cuda(gpu)
-    # model.to(device)
     logger.info(str(model))
-
     optimizer = build_pretrain_optimizer(args, model, logger) 
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     logger.info(f"number of params: {n_parameters}")
     lr_scheduler = build_scheduler(args, optimizer, len(data_loader_train))
-
-    # summary(model, ((3, 224, 224), (28,28)))
-
     logger.info("Start training")
     start_time = time.time()
     if args.WANDB:
@@ -160,7 +158,6 @@ def train_one_epoch(config, model, data_loader, optimizer, epoch, lr_scheduler):
                 wandb.log({"epoch": epoch,"train_loss": loss_meter.val,"train_loss_avg": loss_meter.avg,"memory": memory_used,"lr": lr}, step=epoch)
     epoch_time = time.time() - start
     logger.info(f"EPOCH {epoch} training takes {datetime.timedelta(seconds=int(epoch_time))}")
-    
 
 if __name__ == '__main__':
     args = parse_option()

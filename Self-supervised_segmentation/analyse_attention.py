@@ -27,13 +27,13 @@ if __name__ == '__main__':
         help="Path to pretrained weights to load.")
     parser.add_argument("--checkpoint_key", default="teacher", type=str,
         help='Key to use in the checkpoint (example: "teacher")')
-    parser.add_argument("--image_path", default="/home/mohamad_h/STEGO/STEGO/src/Aips_Guassian+TopHat/imgs/train/", type=str, help="Path of the image to load.")
+    parser.add_argument("--image_path", default="/home/mohamad_h/data/Data_OCM_ALL/roi_0023_exp_2018-04-03-Brain03_2R-SOCT_roi_40xAcquisitions_40x_Acquisitions_z12_A01_volume_OCM_(PY_Left_NuFO_Orientation).jpg", type=str, help="Path of the image to load.")
     parser.add_argument("--image_size", default=(384, 384), type=int, nargs="+", help="Resize image.")
     parser.add_argument('--output_dir', default='/home/mohamad_h/LINUM/Results/AIPs/', help='Path where to save visualizations.')
     parser.add_argument("--threshold", type=float, default=0.1, help="""We visualize masks
         obtained by thresholding the self-attention maps to keep xx% of the mass.""")
     # Boolyan for croping 
-    parser.add_argument("--crop", type=int, default=16, help="""Amount of croping (4 or 16)""")
+    parser.add_argument("--crop", type=int, default=1, help="""Amount of croping (4 or 16)""")
     # Attention query analysis mode boolean
     parser.add_argument("--region_query", type=bool, default=False, help="""To analyze the attention query or not""")
     parser.add_argument("--query_analysis", type=bool, default=False, help="""To analyze the attention query or not""")
@@ -42,7 +42,7 @@ if __name__ == '__main__':
     # boolean to save the queried attention maps with the target points
     parser.add_argument("--save_query", type=bool, default=False, help="""To save the queried attention maps with the target points""")
     # boolean to save the feature maps
-    parser.add_argument("--save_feature", type=bool, default=False, help="""To save the feature maps""")
+    parser.add_argument("--save_feature", type=bool, default=True, help="""To save the feature maps""")
     args = parser.parse_args()
 
     torch.cuda.empty_cache()

@@ -1,4 +1,4 @@
-
+# git add --all -- ':!images/' ':!AIPs_40X/' :'!output/' :'!wandb/'
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = "5"
 import argparse

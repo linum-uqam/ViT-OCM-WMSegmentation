@@ -1,0 +1,25 @@
+
+program: eval.py
+method: grid
+
+name: sweep
+project: Evaluation
+entity : mohamad_hawchar
+
+metric:
+  goal: maximize
+  name: jaccard
+
+parameters:
+  image_size:
+    values: [[384,384]]
+  pretrained_weights:
+    values: [
+      "/home/mohamad_h/output/vit_small/AM_224_Cos_32B_sumL_0.3M_16MP/ckpt_epoch_29.pth",
+      "/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/vit_small/VIT_8_AM_224_32B_0.3R_8MP/ckpt_epoch_29.pth"
+      ]
+  crop:
+    values: [1, 4, 16]
+  method:
+    values: [ours, k-means_ours, chan-vese_ours]
+      

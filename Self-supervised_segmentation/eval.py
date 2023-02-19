@@ -14,18 +14,19 @@ from timm.utils import AverageMeter
 import torchvision.transforms as T
 import torch.nn as nn 
 from utils import DiceLoss
+from matplotlib import pyplot as plt
 
 def parse_args():
     parser = argparse.ArgumentParser('Visualize Self-Attention maps')
     parser.add_argument('--arch', default='vit_small', type=str,
         choices=['vit_tiny', 'vit_small', 'vit_base'], help='Architecture (support only ViT atm).')
     parser.add_argument('--patch_size', default=8, type=int, help='Patch resolution of the model.')
-    parser.add_argument('--pretrained_weights', default='/home/mohamad_h/output/vit_small/AIP+M_224_multistepLR_60B_meanL/ckpt_epoch_25.pth', type=str,
+    parser.add_argument('--pretrained_weights', default='/home/mohamad_h/output/vit_small/AM_224_Cos_32B_sumL_0.3M_16MP/ckpt_epoch_29.pth', type=str,
         help="Path to pretrained weights to load.")
     parser.add_argument("--checkpoint_key", default="teacher", type=str,
         help='Key to use in the checkpoint (example: "teacher")')
-    parser.add_argument("--eval_dataset_path", default="/home/mohamad_h/data/AIP_annotated_data/", type=str, help="Path of the image to load.")
-    parser.add_argument("--image_size", default=(384, 384), type=int, nargs="+", help="Resize image.") #(384, 384)
+    parser.add_argument("--eval_dataset_path", default="/home/mohamad_h/data/AIP_annotated_data_cleaned/", type=str, help="Path of the image to load.")
+    parser.add_argument("--image_size", default=(384, 384),type=list, nargs="+", help="Resize image.") #(384, 384)
     parser.add_argument('--output_dir', default='/home/mohamad_h/LINUM/Results/AIPs_labeled/', help='Path where to save visualizations.')
     parser.add_argument("--threshold", type=float, default=0.1, help="""We visualize masks
         obtained by thresholding the self-attention maps to keep xx% of the mass.""")
@@ -40,10 +41,11 @@ def parse_args():
     parser.add_argument("--save_query", type=bool, default=False, help="""To save the queried attention maps with the target points""")
     # boolean to save the feature maps
     parser.add_argument("--save_feature", type=bool, default=False, help="""To save the feature maps""")
-    parser.add_argument("--batch_size", type=int, default=8, help="""Batch size""")
-    parser.add_argument('--wandb', default=False, help='whether to use wandb')
-    parser.add_argument('--tag', default='Ours_chan-vese', help='tag for wandb')
-    parser.add_argument('--method', default='ours', help='method to implement: ours, otsu, k-means, k-means_ours, chan-vese')
+    parser.add_argument("--batch_size", type=int, default=32, help="""Batch size""")
+    parser.add_argument('--wandb', default=True, help='whether to use wandb')
+    parser.add_argument('--tag', default='k-means', help='tag for wandb')
+    parser.add_argument('--method', default='k-means', help='method to implement: ours, otsu, k-means, k-means_ours, chan-vese, chan-vese_ours')
+    parser.add_argument('--median_filter', default=10, help='whether to use median filter')
     args = parser.parse_args()
     return args
 
@@ -97,10 +99,12 @@ def main(args):
     
     logger.info(f"Creating model:{args.arch}/{args.patch_size}")
     logger.info(str(model))
-    validate(args, data_loader, model, device)
+    validate(args, data_loader, model, device, logger, wandb)
 
 @torch.no_grad()
-def validate(args, data_loader, model, device):
+def validate(args, data_loader, model, device , logger=None, wandb=None, epoch=0):
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    print(f"Device: {device}")
     criterion = DiceLoss()
     valid_losses = []
     sum_loss = 0.0
@@ -110,6 +114,9 @@ def validate(args, data_loader, model, device):
     loss_meter = AverageMeter()
     acc_meter = AverageMeter()
     f1_meter = AverageMeter()
+    precesion_meter = AverageMeter()
+    recall_meter = AverageMeter()
+    jaccard_meter = AverageMeter()
     transform = T.ToPILImage()
 
     end = time.time()
@@ -128,7 +135,7 @@ def validate(args, data_loader, model, device):
                 # average attentions over heads
                 average_attentions = np.mean(attention_response, axis=0)
                 # median filter scipy
-                average_attentions = median_filter(average_attentions, size=10)
+                average_attentions = median_filter(average_attentions, size=args.median_filter)
             else:
                 average_crops = []
                 for j in range(images.shape[1]):
@@ -142,7 +149,7 @@ def validate(args, data_loader, model, device):
                     # average attentions over heads
                     average_attentions = np.mean(attention_response, axis=0)
                     # median filter scipy
-                    average_attentions = median_filter(average_attentions, size=10)
+                    average_attentions = median_filter(average_attentions, size=args.median_filter)
                     average_crops.append(average_attentions)
                 average_attentions = concat_crops(average_crops)
                 img = concat_crops(images[i,:,0,:,:])
@@ -180,6 +187,9 @@ def validate(args, data_loader, model, device):
             loss_meter.update(loss.item(), target.size(0))
             acc_meter.update(score_acc.item(), target.size(0))
             f1_meter.update(score_f1.item(), target.size(0))
+            precesion_meter.update(score_precision.item(), target.size(0))
+            recall_meter.update(score_recall.item(), target.size(0))
+            jaccard_meter.update(score_jaccard.item(), target.size(0))
 
             # measure elapsed time
             batch_time.update(time.time() - end)
@@ -193,22 +203,44 @@ def validate(args, data_loader, model, device):
                 f'Loss {loss_meter.val:.4f} ({loss_meter.avg:.4f})\t'
                 f'Acc {acc_meter.val:.3f} ({acc_meter.avg:.3f})\t'
                 f'f1 {f1_meter.val:.3f} ({f1_meter.avg:.3f})\t' 
-                f'prec {score_precision:.3f} ({score_precision:.3f})\t'
-                f'recall {score_recall:.3f} ({score_recall:.3f})\t'
-                f'jaccard {score_jaccard:.3f} ({score_jaccard:.3f})\t'
+                f'prec {precesion_meter.val:.3f} ({precesion_meter.avg:.3f})\t'
+                f'recall {recall_meter.val:.3f} ({recall_meter.avg:.3f})\t'
+                f'jaccard {jaccard_meter.val:.3f} ({jaccard_meter.avg:.3f})\t'
                 f'Mem {memory_used:.0f}MB')
-    logger.info(f' * Acc_average: {acc_meter.avg:.3f} F1_average {f1_meter.avg:.3f} precision {score_precision:.3f} recall {score_recall:.3f} jaccard {score_jaccard:.3f}')
+    logger.info(f' * Acc_average: {acc_meter.avg:.3f} F1_average {f1_meter.avg:.3f} precision {precesion_meter.avg:.3f} recall {recall_meter.avg:.3f} jaccard {jaccard_meter.avg:.3f}')
     if args.crop == 1:
-        img = images
+        img = images[i][0].cpu().numpy()
+        target = target[i].cpu().numpy()
+        output = output[0].cpu().numpy()
+    else:
+        img = img[0][0].cpu().numpy()
+        target = target[i].cpu().numpy()
+        output = output[0].cpu().numpy()
     if args.wandb:
+                plt.axis('off')
+                plt.tight_layout()
+                plt.show()
+                plt.gca().set_axis_off()
+                plt.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, 
+                            hspace = 0, wspace = 0)
+                plt.margins(0,0)
+                plt.gca().xaxis.set_major_locator(plt.NullLocator())
+                plt.gca().yaxis.set_major_locator(plt.NullLocator())
+                attnetion_image = plt.imshow(average_attentions)
                 wandb.log({"Loss":loss_meter.val,
+                 "Dice": 1-loss_meter.val,
                  "Acc":acc_meter.avg,
                  "f1" :f1_meter.avg,
-                 "precision":score_precision,
-                 "recall":score_recall,
-                 "jaccard":score_jaccard,
-                 "input_image": [wandb.Image(img[0][0].cpu().numpy(), caption="Input Image"), wandb.Image(target[i].cpu().numpy(), caption="Target"), wandb.Image(output[0].cpu().numpy(), caption="Output")],
-                 })
+                 "precision":precesion_meter.avg,
+                 "recall":recall_meter.avg,
+                 "jaccard":jaccard_meter.avg,
+                 "input_images": [
+                    wandb.Image(img, caption="Input Image"),
+                    wandb.Image(target, caption="Target"),
+                    wandb.Image(output, caption="Output") ,
+                    wandb.Image(attnetion_image, caption="Attention")
+                    ],
+                 }, step=epoch)
     return acc_meter.avg, f1_meter.avg, loss_meter.avg
 
 
@@ -220,12 +252,19 @@ if __name__ == "__main__":
     if args.wandb:
         wandb.login()
         wandb.init(
-            project="segmentation_evaluatoin",
+            project="evaluation",
             entity="mohamad_hawchar",
-            name = args.tag,
+            name = f"{args.arch}_{args.patch_size}_{args.method}_{args.crop}_{args.pretrained_weights.split('/')[-2]}_{args.pretrained_weights.split('/')[-1]}",
             config=args
             )
         args = wandb.config
+        print(args.image_size)
+        print(type(args.image_size))
+        #check if args.image_size is tuple or not, if not, convert it to tuple
+        if type(args.image_size) is not list:
+            print("FML")
+            args.image_size = [args.image_size, args.image_size]
+        print(args.image_size)
     main(args)
     if args.wandb:
         wandb.finish()

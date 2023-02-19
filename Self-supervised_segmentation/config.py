@@ -57,6 +57,7 @@ _C.MODEL.DROP_RATE = 0.0
 _C.MODEL.DROP_PATH_RATE = 0.1
 # Label Smoothing
 _C.MODEL.LABEL_SMOOTHING = 0.1
+_C.MODEL.CHECKPOINT_KEY = 'teacher'
 
 # Swin Transformer parameters
 _C.MODEL.SWIN = CN()
@@ -111,7 +112,7 @@ _C.TRAIN.USE_CHECKPOINT = False
 
 # LR scheduler
 _C.TRAIN.LR_SCHEDULER = CN()
-_C.TRAIN.LR_SCHEDULER.NAME = 'multistep'
+_C.TRAIN.LR_SCHEDULER.NAME = 'cosine'
 # Epoch interval to decay LR, used in StepLRScheduler
 _C.TRAIN.LR_SCHEDULER.DECAY_EPOCHS = 30
 # LR decay rate, used in StepLRScheduler
@@ -192,7 +193,14 @@ _C.THROUGHPUT_MODE = False
 
 # [SimMIM] path to pre-trained model
 _C.PRETRAINED = ''
-
+_C.WANDB = False
+_C.wandb = False
+_C.crop = 1
+_C.batch_size = 1
+_C.patch_size = 8
+_C.method = 'ours'
+_C.median_filter = 10
+_C.PRETRAINED_WEIGHTS = ''
 
 def update_config(config, args):
 
@@ -208,6 +216,7 @@ def update_config(config, args):
     # merge from specific arguments
     if _check_args('batch_size'):
         config.DATA.BATCH_SIZE = args.batch_size
+        config.batch_size = args.batch_size
     if _check_args('pretrained_weights'):
         config.PRETRAINED_WEIGHTS = args.pretrained_weights
     if _check_args('output'):
@@ -236,6 +245,7 @@ def update_config(config, args):
         config.MODEL.NAME = args.arch
     if _check_args('patch_size'):
         config.MODEL.PATCH_SIZE = args.patch_size
+        config.patch_size = args.patch_size
     if _check_args('checkpoint_key'):
         config.MODEL.CHECKPOINT_KEY = args.checkpoint_key
     if _check_args('image_path'):
@@ -252,11 +262,19 @@ def update_config(config, args):
         config.TAG = args.tag
     if _check_args('wandb'):
         config.WANDB = args.wandb
+        config.wandb = args.wandb
     if _check_args('loss_operation'):
         config.LOSS_OPERATION = args.loss_operation
+    if _check_args('crop'):
+        config.crop = args.crop
+    if _check_args('method'):
+        config.method = args.method
+    if _check_args('median_filter'):
+        config.median_filter = args.median_filter
+        
     
     # output folder
-    config.OUTPUT = os.path.join(config.OUTPUT, config.MODEL.NAME, config.TAG)
+    config.OUTPUT = os.path.join(config.OUTPUT, config.MODEL.NAME, f"VIT_8_AM_{config.DATA.IMG_SIZE[0]}_{config.DATA.BATCH_SIZE}B_{config.DATA.MASK_RATIO}R_{config.DATA.MASK_PATCH_SIZE}MP")
     create_dir(config.OUTPUT)
     config.freeze()
 

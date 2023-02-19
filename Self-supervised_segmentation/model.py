@@ -74,7 +74,7 @@ class MIM(nn.Module):
         mask = mask.repeat_interleave(self.patch_size, 1).repeat_interleave(self.patch_size, 2).unsqueeze(1).contiguous()
         loss_recon = F.l1_loss(x, x_rec, reduction='none')
         loss = (loss_recon * mask).sum() / (mask.sum() + 1e-5) / self.in_chans
-        return loss
+        return loss, x_rec, mask
 
     @torch.jit.ignore
     def no_weight_decay(self):

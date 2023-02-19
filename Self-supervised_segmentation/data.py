@@ -262,6 +262,8 @@ def build_eval_loader(args):
 
     images = sorted(glob(args.eval_dataset_path + "/images/*.jpg")) 
     labels = sorted(glob(args.eval_dataset_path + "/labels/*.png"))
+    print("images: ", len(images))
+    print("labels: ", len(labels))
     croped_transform = pth_transforms.Compose([
         pth_transforms.Resize((args.image_size[0]//np.int8(np.sqrt(args.crop)), args.image_size[1]//np.int8(np.sqrt(args.crop))), interpolation  = pth_transforms.InterpolationMode.NEAREST),
         pth_transforms.ToTensor(),

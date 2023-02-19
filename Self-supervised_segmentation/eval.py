@@ -21,7 +21,7 @@ def parse_args():
     parser.add_argument('--arch', default='vit_small', type=str,
         choices=['vit_tiny', 'vit_small', 'vit_base'], help='Architecture (support only ViT atm).')
     parser.add_argument('--patch_size', default=8, type=int, help='Patch resolution of the model.')
-    parser.add_argument('--pretrained_weights', default='/home/mohamad_h/output/vit_small/AM_224_Cos_32B_sumL_0.3M_16MP/ckpt_epoch_29.pth', type=str,
+    parser.add_argument('--pretrained_weights', default='/home/mohamad_h/output/vit_small/VIT_8_AM_384_16B_0.3R_16MP/ckpt_epoch_29.pth', type=str,
         help="Path to pretrained weights to load.")
     parser.add_argument("--checkpoint_key", default="teacher", type=str,
         help='Key to use in the checkpoint (example: "teacher")')
@@ -252,7 +252,7 @@ if __name__ == "__main__":
     if args.wandb:
         wandb.login()
         wandb.init(
-            project="evaluation",
+            project="evaluation_temp",
             entity="mohamad_hawchar",
             name = f"{args.arch}_{args.patch_size}_{args.method}_{args.crop}_{args.pretrained_weights.split('/')[-2]}_{args.pretrained_weights.split('/')[-1]}",
             config=args

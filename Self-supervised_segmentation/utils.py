@@ -15,7 +15,7 @@ import matplotlib.patches as mpatches
 import numpy as np
 import skimage
 from sklearn.metrics import accuracy_score, f1_score, jaccard_score, precision_score, recall_score
-
+import copy
 
 """ Seeding the random """
 def seeding(seed):
@@ -95,7 +95,15 @@ def kmeans(img, attention , output_directory = "",save = True, name = None):
     res_ours = center_ours[label_ours.flatten()]
     res_ours = res_ours.reshape((result.shape))
     ret , res_ours = cv2.threshold(res_ours, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-
+    # convert pil to numpy
+    imag_array = np.array(img)
+    imag_array = imag_array.astype(np.uint8)
+    Z = imag_array.reshape((-1,3))
+    # convert to np.float32
+    Z = np.float32(Z)
+    # define criteria, number of clusters(K) and apply kmeans()
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0)
+    K = 2
     ret,label,center=cv2.kmeans(Z,K,None,criteria,10,cv2.KMEANS_RANDOM_CENTERS)
     # Now convert back into uint8, and make original image
     center = np.uint8(center)

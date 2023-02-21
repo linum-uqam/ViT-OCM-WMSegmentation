@@ -1,4 +1,5 @@
 # git add --all -- ':!images/' ':!AIPs_40X/' :'!output/' :'!wandb/' :'!files/' :'!results/'
+# git commit -m "UNET Evalutation"
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = "5"
 import argparse

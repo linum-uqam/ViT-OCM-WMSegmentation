@@ -82,7 +82,11 @@ class AIP_Labeled_Dataset(Dataset):
         return self.n_samples
 
 class AIP_Croped_Labeled_Dataset(Dataset):
+<<<<<<< HEAD
     def __init__(self, images_path, label_path,croped_transform = None, transform=None, crop = 4,image_size = 800):
+=======
+    def __init__(self, images_path, label_path,croped_transform = None, transform=None, crop = 4,image_size = (800,800)):
+>>>>>>> 5de75e9d1861ad794c4fcb0eda22704023697967
 
         self.images_path = images_path
         self.label_path = label_path
@@ -103,6 +107,7 @@ class AIP_Croped_Labeled_Dataset(Dataset):
         label = self.transform(label)
         images = []
             
+<<<<<<< HEAD
         w, h = self.image_size - self.image_size % 8, self.image_size - self.image_size % 8
         label = label[:, :w, :h]
         if self.crop_rate == 2:
@@ -112,6 +117,17 @@ class AIP_Croped_Labeled_Dataset(Dataset):
         w, h = w // self.crop_rate, h // self.crop_rate
         # Brake the image into 4 equal crops and stack them in a list of images
         w, h = to_be_croped_img.size // self.crop_rate, to_be_croped_img.size // self.crop_rate
+=======
+        w, h = self.image_size[0] - self.image_size[0] % 8, self.image_size[1] - self.image_size[1] % 8
+        label = label[:, :w, :h]
+        if self.crop_rate == 2:
+            w, h = img.shape[1] - img.shape[1] % 32, img.shape[2] - img.shape[2] % 32
+        else:
+            w, h = img.shape[1] - img.shape[1] % 64, img.shape[2] - img.shape[2] % 64
+        w, h = w // self.crop_rate, h // self.crop_rate
+        # Brake the image into 4 equal crops and stack them in a list of images
+        w, h = to_be_croped_img.size[0] // self.crop_rate, to_be_croped_img.size[1] // self.crop_rate
+>>>>>>> 5de75e9d1861ad794c4fcb0eda22704023697967
         for i in range(self.crop_rate):
             for j in range(self.crop_rate):
                 x = to_be_croped_img.crop((j * w, i * h, (j + 1) * w, (i + 1) * h))
@@ -165,7 +181,11 @@ class MaskGenerator:
         self.mask_patch_size = mask_patch_size
         self.model_patch_size = model_patch_size
         self.mask_ratio = mask_ratio
+<<<<<<< HEAD
         print(input_size, mask_patch_size)
+=======
+        
+>>>>>>> 5de75e9d1861ad794c4fcb0eda22704023697967
         assert self.input_size % self.mask_patch_size == 0
         assert self.mask_patch_size % self.model_patch_size == 0
         
@@ -199,9 +219,15 @@ class SimMIMTransform:
  
         
         model_patch_size=args.MODEL.PATCH_SIZE
+<<<<<<< HEAD
         self.image_size = args.DATA.IMG_SIZE
         self.mask_generator = MaskGenerator(
             input_size=args.DATA.IMG_SIZE,
+=======
+        self.image_size = args.DATA.IMG_SIZE[0]
+        self.mask_generator = MaskGenerator(
+            input_size=args.DATA.IMG_SIZE[0],
+>>>>>>> 5de75e9d1861ad794c4fcb0eda22704023697967
             mask_patch_size=args.DATA.MASK_PATCH_SIZE,
             model_patch_size=model_patch_size,
             mask_ratio=args.DATA.MASK_RATIO,
@@ -265,7 +291,11 @@ def build_eval_loader(args):
     print("images: ", len(images))
     print("labels: ", len(labels))
     croped_transform = pth_transforms.Compose([
+<<<<<<< HEAD
         pth_transforms.Resize((args.image_size//np.int8(np.sqrt(args.crop)), args.image_size//np.int8(np.sqrt(args.crop))), interpolation  = pth_transforms.InterpolationMode.NEAREST),
+=======
+        pth_transforms.Resize((args.image_size[0]//np.int8(np.sqrt(args.crop)), args.image_size[1]//np.int8(np.sqrt(args.crop))), interpolation  = pth_transforms.InterpolationMode.NEAREST),
+>>>>>>> 5de75e9d1861ad794c4fcb0eda22704023697967
         pth_transforms.ToTensor(),
     ])
     
@@ -274,7 +304,11 @@ def build_eval_loader(args):
         pth_transforms.ToTensor(),
     ])
     if args.crop > 1:
+<<<<<<< HEAD
         dataset = AIP_Croped_Labeled_Dataset(images, labels, croped_transform = croped_transform, transform = transform, image_size=(args.image_size, args.image_size), crop=args.crop)
+=======
+        dataset = AIP_Croped_Labeled_Dataset(images, labels, croped_transform = croped_transform, transform = transform, image_size=(args.image_size[0], args.image_size[1]), crop=args.crop)
+>>>>>>> 5de75e9d1861ad794c4fcb0eda22704023697967
     else:
         dataset = AIP_Labeled_Dataset(images, labels , transform = transform)
     dataloader = DataLoader(dataset, args.batch_size, num_workers=1, pin_memory=True, drop_last=True, collate_fn=collate_fn)

@@ -15,7 +15,11 @@ import matplotlib.patches as mpatches
 import numpy as np
 import skimage
 from sklearn.metrics import accuracy_score, f1_score, jaccard_score, precision_score, recall_score
+<<<<<<< HEAD
 from sklearn.cluster import MeanShift, estimate_bandwidth
+=======
+import copy
+>>>>>>> 5de75e9d1861ad794c4fcb0eda22704023697967
 
 """ Seeding the random """
 def seeding(seed):
@@ -47,7 +51,10 @@ def threshold(img , attention, output_directory = "",save = True, name = None):
     # multipli img with average attention
     # img = np.permute(img, (1,2,0))
     result = img * attention / np.max(attention)
+<<<<<<< HEAD
     # result = img * l1_normalize(attention)
+=======
+>>>>>>> 5de75e9d1861ad794c4fcb0eda22704023697967
     # save result
     fname = os.path.join(output_directory, "result.png")
     if save:
@@ -303,6 +310,7 @@ class DiceLoss(nn.Module):
         dice = (2.*intersection + smooth)/(inputs.sum() + targets.sum() + smooth)
 
         return 1 - dice
+<<<<<<< HEAD
 
 
 def l1_normalize(matrix):
@@ -341,3 +349,5 @@ def min_max_normalize(matrix):
     # Subtract the minimum and divide by the maximum for each row
     normalized_matrix = (matrix - min[:, np.newaxis]) / (max[:, np.newaxis] - min[:, np.newaxis])
     return normalized_matrix
+=======
+>>>>>>> 5de75e9d1861ad794c4fcb0eda22704023697967

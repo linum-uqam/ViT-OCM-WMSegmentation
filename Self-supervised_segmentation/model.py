@@ -96,7 +96,11 @@ def build_model(args):
             depth=12, 
             num_heads=6, 
             mlp_ratio=4,
+<<<<<<< HEAD
             img_size=[args.DATA.IMG_SIZE],
+=======
+            img_size=[args.DATA.IMG_SIZE[0]],
+>>>>>>> 5de75e9d1861ad794c4fcb0eda22704023697967
             qkv_bias=True, 
             norm_layer=partial(nn.LayerNorm, eps=1e-6),
             interpolate_encoding=True,

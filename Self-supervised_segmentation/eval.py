@@ -44,11 +44,7 @@ def parse_args():
     parser.add_argument("--batch_size", type=int, default=32, help="""Batch size""")
     parser.add_argument('--wandb', default=True, help='whether to use wandb')
     parser.add_argument('--tag', default='k-means', help='tag for wandb')
-<<<<<<< HEAD
     parser.add_argument('--method', default='ours', help='method to implement: ours, otsu, k-means, k-means_ours, chan-vese, chan-vese_ours')
-=======
-    parser.add_argument('--method', default='k-means', help='method to implement: ours, otsu, k-means, k-means_ours, chan-vese, chan-vese_ours')
->>>>>>> 5de75e9d1861ad794c4fcb0eda22704023697967
     parser.add_argument('--median_filter', default=10, help='whether to use median filter')
     args = parser.parse_args()
     return args
@@ -176,11 +172,7 @@ def validate(args, data_loader, model, device , logger=None, wandb=None, epoch=0
             if args.method == "chan-vese" or args.method == "chan-vese_ours":
                 output, original_cv = chan_vese(transform(img.squeeze(0)).convert("L") , average_attentions, save=False)
             if args.method == "chan-vese":
-<<<<<<< HEAD
                 output = original_cv 
-=======
-                output = original_cv
->>>>>>> 5de75e9d1861ad794c4fcb0eda22704023697967
             output = torch.tensor(output).unsqueeze(0)
             output = output/255
             # target = target.squeeze(0)

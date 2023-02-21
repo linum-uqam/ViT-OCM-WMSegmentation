@@ -253,7 +253,11 @@ def update_config(config, args):
     if _check_args('eval_dataset_path'):
         config.eval_dataset_path = args.eval_dataset_path
     if _check_args('image_size'):
-        config.DATA.IMG_SIZE = args.image_size
+        #check if it is a list
+        if type(args.image_size) is list:
+            config.DATA.IMG_SIZE = args.image_size[0]
+        else: 
+            config.DATA.IMG_SIZE = args.image_size
     if _check_args('image_size'):
         config.image_size = args.image_size
     if _check_args('output_dir'):
@@ -272,9 +276,12 @@ def update_config(config, args):
     if _check_args('median_filter'):
         config.median_filter = args.median_filter
         
-    
+    if type(args.image_size) is not list:
+            print("FML")
+            args.image_size = [args.image_size, args.image_size]
+    print(args.image_size)
     # output folder
-    config.OUTPUT = os.path.join(config.OUTPUT, config.MODEL.NAME, f"VIT_8_AM_{config.DATA.IMG_SIZE[0]}_{config.DATA.BATCH_SIZE}B_{config.DATA.MASK_RATIO}R_{config.DATA.MASK_PATCH_SIZE}MP")
+    config.OUTPUT = os.path.join(config.OUTPUT, config.MODEL.NAME, f"VIT_8_AM_{config.DATA.IMG_SIZE}_{config.DATA.BATCH_SIZE}B_{config.DATA.MASK_RATIO}R_{config.DATA.MASK_PATCH_SIZE}MP")
     create_dir(config.OUTPUT)
     config.freeze()
 

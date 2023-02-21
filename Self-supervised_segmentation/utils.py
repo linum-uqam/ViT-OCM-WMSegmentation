@@ -15,7 +15,7 @@ import matplotlib.patches as mpatches
 import numpy as np
 import skimage
 from sklearn.metrics import accuracy_score, f1_score, jaccard_score, precision_score, recall_score
-import copy
+from sklearn.cluster import MeanShift, estimate_bandwidth
 
 """ Seeding the random """
 def seeding(seed):
@@ -47,6 +47,7 @@ def threshold(img , attention, output_directory = "",save = True, name = None):
     # multipli img with average attention
     # img = np.permute(img, (1,2,0))
     result = img * attention / np.max(attention)
+    # result = img * l1_normalize(attention)
     # save result
     fname = os.path.join(output_directory, "result.png")
     if save:
@@ -302,3 +303,41 @@ class DiceLoss(nn.Module):
         dice = (2.*intersection + smooth)/(inputs.sum() + targets.sum() + smooth)
 
         return 1 - dice
+
+
+def l1_normalize(matrix):
+    # Compute the L1 norm of each row
+    norms = np.sum(np.abs(matrix), axis=1)
+    # Divide each row by its L1 norm
+    normalized_matrix = matrix / norms[:, np.newaxis]
+    return normalized_matrix + 1e-8
+
+def l2_normalize(matrix):
+    # Compute the L2 norm of each row
+    norms = np.sqrt(np.sum(matrix**2, axis=1))
+    # Divide each row by its L2 norm
+    normalized_matrix = matrix / norms[:, np.newaxis]
+    return normalized_matrix + 1e-8
+
+def zscore_normalize(matrix):
+    # Compute the mean and standard deviation of each row
+    mean = np.mean(matrix, axis=1)
+    std = np.std(matrix, axis=1)
+    # Subtract the mean and divide by the standard deviation for each row
+    normalized_matrix = (matrix - mean[:, np.newaxis]) / std[:, np.newaxis]
+    return normalized_matrix 
+
+def softmax_normalize(matrix):
+    # Apply the softmax function to each row
+    exp_matrix = np.exp(matrix)
+    sum_exp = np.sum(exp_matrix, axis=1)
+    normalized_matrix = exp_matrix / sum_exp[:, np.newaxis]
+    return normalized_matrix
+
+def min_max_normalize(matrix):
+    # Compute the minimum and maximum of each row
+    min = np.min(matrix, axis=1)
+    max = np.max(matrix, axis=1)
+    # Subtract the minimum and divide by the maximum for each row
+    normalized_matrix = (matrix - min[:, np.newaxis]) / (max[:, np.newaxis] - min[:, np.newaxis])
+    return normalized_matrix

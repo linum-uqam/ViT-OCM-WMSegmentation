@@ -3,7 +3,7 @@ program: mim.py
 method: grid
 
 name: sweep
-project: MIM_Evaluation
+project: MIM
 entity : mohamad_hawchar
 
 metric:
@@ -11,8 +11,10 @@ metric:
   name: jaccard
 
 parameters:
+  image_size:
+      value: 384
   mask_patch_size:
     values: [8, 16, 32]
   mask_ratio:
-    values: [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8, 0.9]
+    value: 0.5
       

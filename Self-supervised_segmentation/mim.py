@@ -1,9 +1,5 @@
 from __future__ import print_function
 from __future__ import division
-import math
-import numpy as np
-import matplotlib.pyplot as plt
-
 import torch
 import sys
 print('__Python VERSION:', sys.version)
@@ -60,7 +56,7 @@ def parse_option():
     parser.add_argument("--checkpoint_key", default="teacher", type=str,
         help='Key to use in the checkpoint (example: "teacher")')
     parser.add_argument("--image_path", default="/home/mohamad_h/data/Data_OCM_ALL/", type=str, help="Path of the image to load.")
-    parser.add_argument("--image_size", default=(384, 384), type=int, nargs="+", help="Resize image.")
+    parser.add_argument("--image_size", default=384, type=int, nargs="+", help="Resize image.")
     parser.add_argument('--output_dir', default='/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/', help='Path where to save visualizations.')
     parser.add_argument('--output', default='output', type=str, metavar='PATH',
         help='root of output folder, the full path is <output>/<model_name>/<tag> (default: output)')
@@ -87,7 +83,7 @@ def main(args):
         wandb.init(
             project="Mim",
             entity="mohamad_hawchar",
-            name = f"VIT_8_AM_{args.DATA.IMG_SIZE[0]}_{args.DATA.BATCH_SIZE}B_{args.DATA.MASK_RATIO}R_{args.DATA.MASK_PATCH_SIZE}MP",
+            name = f"VIT_8_AM_{args.DATA.IMG_SIZE}_{args.DATA.BATCH_SIZE}B_{args.DATA.MASK_RATIO}R_{args.DATA.MASK_PATCH_SIZE}MP",
             config=args
             )
 

@@ -210,19 +210,20 @@ class SimMIMTransform:
     
     def __call__(self, img):
        
+        img = self.transform_img(img)
+        mask = self.mask_generator()
+        pil_img = T.ToPILImage()(img)
         if self.roi_masking:
             # otsu thresholding using skimage for a pil image
-            binary = img.convert('L')
+            binary = pil_img.convert('L')
             binary = np.array(binary)
             binary = binary > threshold_otsu(binary)
             rois = get_ROIs(binary)
-
-        img = self.transform_img(img)
-        mask = self.mask_generator()
-        
-        if self.roi_masking:
             # keep the values in mask that intersect with the ROIs
             rois = resize(rois, (mask.shape[0], mask.shape[1]), order=0, anti_aliasing=False, preserve_range=True)
+            # make all values in rois 1 if they are not 0
+            rois = rois.astype(np.uint8)
+            rois[rois != 0] = 1
             new_mask = mask * rois
             # check if the mask is empty
             if np.sum(new_mask) != 0:

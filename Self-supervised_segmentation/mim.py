@@ -72,7 +72,7 @@ def parse_option():
     parser.add_argument("--eval_dataset_path", default="/home/mohamad_h/data/AIP_annotated_data_cleaned/", help="evaluate the model on the given dataset")
     parser.add_argument("--crop", type=int, default=1, help="""Amount of croping (4 or 16)""")
     parser.add_argument('--median_filter',type=int, default=10, help='whether to use median filter')
-    parser.add_argument('--roi_masking', default=False, type=bool, help='whether to use roi masking')
+    parser.add_argument('--roi_masking', default=True, type=bool, help='whether to use roi masking')
 
     args = parser.parse_args()
     args = get_config(args)

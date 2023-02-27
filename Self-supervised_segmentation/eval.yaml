@@ -3,7 +3,7 @@ program: eval.py
 method: grid
 
 name: sweep
-project: Evaluation
+project: UNET_OCM
 entity : mohamad_hawchar
 
 metric:
@@ -11,14 +11,14 @@ metric:
   name: jaccard
 
 parameters:
-  image_size:
-    values: [[384,384]]
-  pretrained_weights:
-    values: [
-      "/home/mohamad_h/output/vit_small/VIT_8_AM_384_16B_0.3R_16MP/ckpt_epoch_29.pth"
-      ]
+  # image_size:
+  #   value: 384
+  # pretrained_weights:
+  #   values: [
+  #     "/home/mohamad_h/output/vit_small/VIT_8_MSC_384_8B_0.3R_8MP/ckpt_epoch_10.pth"
+  #     ]
   crop:
-    values: [1, 4, 16]
+    values: [1]
   method:
-    values: [ours, k-means_ours]
+    values: [otsu, k-means, chan-vese, chan-vese_ours, k-means_feature_clustering]
       

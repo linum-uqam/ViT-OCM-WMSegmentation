@@ -519,7 +519,7 @@ def fully_train(net, model_name):
     size = (H, W)
     batch_size = 8
     num_epochs = 150
-    lr = 1e-5
+    lr = 1e-4
     checkpoint_path = f"files/{model_name}.pth"
 
     """ Dataset and loader """
@@ -579,6 +579,8 @@ def fully_train(net, model_name):
 
         train_losses.append(train_loss)
         valid_losses.append(valid_loss)
+        # if log_wandb == True:
+        #     wandb.log({"Train Loss": train_loss, "Valid Loss": valid_loss})
         print(data_str)
     plt.plot(smooth(train_losses,1), 'r-',label='training')
     plt.plot(smooth(valid_losses, 1), 'b-',label='validation')
@@ -717,6 +719,7 @@ def fully_test(net,model_name):
       loss = loss / len(test_x)
       print(f"Jaccard: {jaccard:1.4f} - F1: {f1:1.4f} - Recall: {recall:1.4f} - Precision: {precision:1.4f} - Acc: {acc:1.4f} - ROC-AUC : {roc:1.4f}")
       if log_wandb == True:
+                print("Logging to wandb")
                 wandb.log({
                 "accuracy": acc,
                  "f1" :f1,

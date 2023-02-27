@@ -97,7 +97,7 @@ _C.TRAIN.EPOCHS = 300
 _C.TRAIN.WARMUP_EPOCHS = 20
 _C.TRAIN.WEIGHT_DECAY = 0.05
 _C.TRAIN.BASE_LR = 5e-4
-_C.TRAIN.WARMUP_LR = 5e-7
+_C.TRAIN.WARMUP_LR = 5e-7 # 5e-7 is the original that works vey well
 _C.TRAIN.MIN_LR = 5e-6
 # Clip gradient norm
 _C.TRAIN.CLIP_GRAD = 5.0
@@ -201,6 +201,7 @@ _C.patch_size = 8
 _C.method = 'ours'
 _C.median_filter = 10
 _C.PRETRAINED_WEIGHTS = ''
+_C.roi_masking = False
 
 def update_config(config, args):
 
@@ -275,13 +276,16 @@ def update_config(config, args):
         config.method = args.method
     if _check_args('median_filter'):
         config.median_filter = args.median_filter
+    # roi_masking
+    if _check_args('roi_masking'):
+        config.roi_masking = args.roi_masking
         
     if type(args.image_size) is not list:
             print("FML")
             args.image_size = [args.image_size, args.image_size]
     print(args.image_size)
     # output folder
-    config.OUTPUT = os.path.join(config.OUTPUT, config.MODEL.NAME, f"VIT_8_AM_{config.DATA.IMG_SIZE}_{config.DATA.BATCH_SIZE}B_{config.DATA.MASK_RATIO}R_{config.DATA.MASK_PATCH_SIZE}MP")
+    config.OUTPUT = os.path.join(config.OUTPUT, config.MODEL.NAME, f"VIT_8_{config.TAG}_{config.DATA.IMG_SIZE}_{config.DATA.BATCH_SIZE}B_{config.DATA.MASK_RATIO}R_{config.DATA.MASK_PATCH_SIZE}MP")
     create_dir(config.OUTPUT)
     config.freeze()
 

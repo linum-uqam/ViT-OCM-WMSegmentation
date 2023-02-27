@@ -15,6 +15,7 @@ import matplotlib.patches as mpatches
 import numpy as np
 import skimage
 from sklearn.metrics import accuracy_score, f1_score, jaccard_score, precision_score, recall_score
+from sklearn.cluster import KMeans
 
 """ Seeding the random """
 def seeding(seed):
@@ -46,16 +47,25 @@ def threshold(img , attention, output_directory = "",save = True, name = None):
     # multipli img with average attention
     # img = np.permute(img, (1,2,0))
     result = img * attention / np.max(attention)
-    # result = img * l1_normalize(attention)
+    # attention = min_max_normalize(attention)
+    #convert resul to CV_8UC1
+    # result = img * attention / np.max(attention)
+    result = result.astype(np.uint8)
+    attention = attention *255
+    attention = attention.astype(np.uint8)
     # save result
     fname = os.path.join(output_directory, "result.png")
     if save:
-        plt.imsave(fname=fname, arr=result, format='png')
-    #convert resul to CV_8UC1
-    result = result.astype(np.uint8)
+        plt.imsave(fname=fname, arr=result, format='png') 
     # apply OTSU thresholding to the average result with opencv
     ret , th = cv2.threshold(result, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    ret2, th2 = cv2.threshold( np.array(img), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_TRIANGLE)
+    # apply OTSU thresholding to the original image with skimage
+    img = np.array(img)
+    thresh = skimage.filters.threshold_otsu(img)
+    th2 = img > thresh
+    th2 = th2.astype(np.uint8) * 255
+    # ret2, th2 = cv2.threshold( np.array(img), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_TRIANGLE)
+    ret3, th3 = cv2.threshold( attention, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     if name is not None:
         file_name = name + "/"
         create_dir(os.path.join(output_directory,file_name))
@@ -69,7 +79,11 @@ def threshold(img , attention, output_directory = "",save = True, name = None):
         fname = os.path.join(output_directory, "OTSU_th" + "_original.png")
         plt.imsave(fname=fname, arr=th2, format='png', cmap='gray')
         print(f"{fname} saved.")
-    return th, th2
+        fname = os.path.join(output_directory, "weighted_iamge" + "_attention.png")
+        plt.imsave(fname=fname, arr=result, format='png', cmap='gray')
+        fname = os.path.join(output_directory, "heatmap_otsu" + "_attention.png")
+        plt.imsave(fname=fname, arr=th3, format='png', cmap='gray')
+    return th, th2, th3
 
 
 def kmeans(img, attention , output_directory = "",save = True, name = None):
@@ -125,6 +139,34 @@ def kmeans(img, attention , output_directory = "",save = True, name = None):
         print(f"{fname} saved.")
     return res_ours, res
 
+def kmeans_feature(img, features , output_directory = "",save = True, name = None):
+    # Reshape to (50176X384)
+    features = torch.reshape(features, (-1, features.shape[-1]))
+    # max_values, _ = torch.max(features, dim=0)
+    # img = img[0,0,:,:]
+    # img =  img.view(-1)
+    # features = torch.mul(features, img[:, None])
+    # features = features / max_values
+    # Normalize the feature maps
+    mean = torch.mean(features, axis=0)
+    std = torch.std(features, axis=0)
+    features = (features - mean) / std
+
+    # Perform k-means clustering with 2 clusters
+    kmeans = KMeans(n_init = 10, n_clusters=2, random_state=0).fit(features)
+    labels = kmeans.labels_
+
+    # Reshape the cluster labels to (224X224)
+    labels = labels.reshape(features.shape[-1], features.shape[-1])
+    # Save the binary segmentation map
+    
+    if save:
+        fname = os.path.join(output_directory, "kmeans_clusterd_segmentation.png")
+        plt.imsave(fname=fname, arr=labels, format='png', cmap='gray')
+        print(f"{fname} saved.")
+
+    return labels *255
+
 def chan_vese(img, attention , output_directory = "",save = True, name = None):
     # multipli img with average attention
     # img = np.permute(img, (1,2,0))
@@ -163,19 +205,26 @@ def compute_attention(attentions, query,w_featmap, h_featmap, patch_size):
     attentions = nn.functional.interpolate(attentions.unsqueeze(0), scale_factor=patch_size, mode="nearest")[0].cpu().numpy()
     return attentions, nh
 
-def yen_threshold(img, output_directory, save = True):
+def yen_threshold(img, output_directory = '', save = True):
     # apply YEN thresholding to the average result with opencv
     # pil image to numpy array
     img = np.array(img)
     th = threshold_yen(img)
     binary = th <= img
     # save as black and white cmap
-    fname = os.path.join(output_directory, "YEN_th" + ".png")
+    
     if save:
+        fname = os.path.join(output_directory, "YEN_th" + ".png")
         plt.imsave(fname=fname, arr=binary, format='png', cmap='gray')
     return binary
 
-def morphology_cleaning(img, output_directory, save = True):
+def get_ROIs(img):
+    img = remove_small_objects(img, min_size=10, connectivity=2, in_place=False)
+    img = binary_closing(img, disk(2))
+    img, num = label(img, return_num = True)
+    return img
+
+def morphology_cleaning(img, output_directory = '', save = True):
     # substract objects that are less then 20 px using morphology scikit image
     img = remove_small_objects(img, min_size=20, connectivity=2, in_place=False)
     img = binary_closing(img, disk(2))
@@ -302,3 +351,35 @@ class DiceLoss(nn.Module):
         dice = (2.*intersection + smooth)/(inputs.sum() + targets.sum() + smooth)
 
         return 1 - dice
+    
+def l1_normalize(feat_map):
+    norm_factor = np.sum(np.abs(feat_map)) + 1e-8  # add small constant
+    l1_norm_feat_map = feat_map / norm_factor
+    return l1_norm_feat_map
+
+def l2_normalize(image):
+    norm = np.sqrt(np.sum(np.square(image)))
+    if norm == 0:
+        return image
+    return image / norm
+
+def zscore_normalize(image):
+    mean = np.mean(image)
+    std = np.std(image)
+    if std == 0:
+        return image
+    return (image - mean) / std
+
+def softmax_normalize(feat_map):
+    exp_feat_map = np.exp(feat_map)
+    if np.any(np.sum(exp_feat_map, axis=1) == 0):
+        exp_feat_map = exp_feat_map + 1e-8  # add small constant
+    softmax_norm_feat_map = exp_feat_map / np.sum(exp_feat_map, axis=1, keepdims=True)
+    return softmax_norm_feat_map
+
+def min_max_normalize(image):
+    min_val = np.min(image)
+    max_val = np.max(image)
+    if max_val == min_val:
+        return image
+    return (image - min_val) / (max_val - min_val)

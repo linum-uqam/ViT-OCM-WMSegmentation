@@ -19,7 +19,7 @@ print ('Current cuda device ', torch.cuda.current_device())
 # git add --all -- ':!images/' ':!AIPs_40X/'
 # manual segmentations
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = "0, 1, 2, 3 "
+os.environ['CUDA_VISIBLE_DEVICES'] = "0, 1, 2, 3,4,5 "
 import argparse
 import torch
 from data import build_loader_simmim, build_eval_loader
@@ -63,15 +63,16 @@ def parse_option():
     parser.add_argument('--epochs', default=30, type=int, help='number of total epochs to run')
     parser.add_argument('--warmup_epochs', default=20, type=int, help='number of warmup epochs to run')
     parser.add_argument('--num_workers', default=1, type=int, help='number of workers')
-    parser.add_argument('--batch_size', default=1, type=int, help='batch size')
-    parser.add_argument('--mask_patch_size', default=16, type=int, help='patch size for the mask')
+    parser.add_argument('--batch_size', default=16, type=int, help='batch size')
+    parser.add_argument('--mask_patch_size', default=8, type=int, help='patch size for the mask')
     parser.add_argument('--mask_ratio', default=0.3, type=float, help='ratio of the mask')
     parser.add_argument('--tag', default='AM_224_Cos_32B_sumL_0.3M_16MP', type=str, help='tag of the experiment')
-    parser.add_argument('--wandb', default=False, help='whether to use wandb')
+    parser.add_argument('--wandb', default=True, help='whether to use wandb')
     parser.add_argument('--loss_operation', default='max', type=str, help='mean or sum or max')
     parser.add_argument("--eval_dataset_path", default="/home/mohamad_h/data/AIP_annotated_data_cleaned/", help="evaluate the model on the given dataset")
     parser.add_argument("--crop", type=int, default=1, help="""Amount of croping (4 or 16)""")
     parser.add_argument('--median_filter',type=int, default=10, help='whether to use median filter')
+    parser.add_argument('--roi_masking', default=False, type=bool, help='whether to use roi masking')
 
     args = parser.parse_args()
     args = get_config(args)
@@ -81,7 +82,7 @@ def main(args):
     if args.WANDB == True:
         wandb.login()
         wandb.init(
-            project="Mim",
+            project="temp",
             entity="mohamad_hawchar",
             name = f"VIT_8_AM_{args.DATA.IMG_SIZE}_{args.DATA.BATCH_SIZE}B_{args.DATA.MASK_RATIO}R_{args.DATA.MASK_PATCH_SIZE}MP",
             config=args
@@ -95,7 +96,7 @@ def main(args):
     print(torch.cuda.device_count())
     encoder = build_model(args)
     model = MIM(encoder=encoder, encoder_stride=8)
-    model = nn.DataParallel(model, device_ids=[0, 1, 2, 3])
+    model = nn.DataParallel(model, device_ids=[0, 1, 2, 3,4,5])
     torch.cuda.set_device(gpu)
     model.cuda(gpu)
     logger.info(str(model))
@@ -181,10 +182,10 @@ def train_one_epoch(config, model, data_loader, data_loader_eval, optimizer, epo
                 wandb.log({"epoch": epoch,"train_loss": loss_meter.val,"train_loss_avg": loss_meter.avg,"memory": memory_used,"lr": lr}, step=epoch)
     epoch_time = time.time() - start
     logger.info(f"EPOCH {epoch} training takes {datetime.timedelta(seconds=int(epoch_time))}")
-    input = img[10][0].cpu().numpy()
-    mask = mask[10][0].cpu().numpy()
+    input = img[0][0].cpu().numpy()
+    mask = mask[0][0].cpu().numpy()
     masked_input = input * (1 - mask)
-    x_rec = x_rec[10][0].cpu().detach().numpy()
+    x_rec = x_rec[0][0].cpu().detach().numpy()
     masked_rec = x_rec * mask 
     complete_rec =  x_rec * mask + masked_input
     if args.WANDB:

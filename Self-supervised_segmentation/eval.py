@@ -5,7 +5,7 @@ import torch
 import numpy as np
 import dino.vision_transformer as vits
 from scipy.ndimage import median_filter
-from utils import threshold, compute_attention,create_dir, seeding, kmeans, concat_crops, chan_vese, calculate_metrics
+from utils import threshold, compute_attention,create_dir, seeding, kmeans, concat_crops, chan_vese, calculate_metrics, kmeans_feature
 import time
 from logger import create_logger
 from data import build_eval_loader
@@ -15,18 +15,19 @@ import torchvision.transforms as T
 import torch.nn as nn 
 from utils import DiceLoss
 from matplotlib import pyplot as plt
+import torch.nn.functional as F
 
 def parse_args():
     parser = argparse.ArgumentParser('Visualize Self-Attention maps')
     parser.add_argument('--arch', default='vit_small', type=str,
         choices=['vit_tiny', 'vit_small', 'vit_base'], help='Architecture (support only ViT atm).')
     parser.add_argument('--patch_size', default=8, type=int, help='Patch resolution of the model.')
-    parser.add_argument('--pretrained_weights', default='/home/mohamad_h/output/vit_small/VIT_8_AM_384_16B_0.3R_16MP/ckpt_epoch_29.pth', type=str,
+    parser.add_argument('--pretrained_weights', default='/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/vit_small/VIT_8_AM_384_16B_0.3R_8MP/ckpt_epoch_29.pth', type=str,
         help="Path to pretrained weights to load.")
     parser.add_argument("--checkpoint_key", default="teacher", type=str,
         help='Key to use in the checkpoint (example: "teacher")')
     parser.add_argument("--eval_dataset_path", default="/home/mohamad_h/data/AIP_annotated_data_cleaned/", type=str, help="Path of the image to load.")
-    parser.add_argument("--image_size", default=(384, 384),type=list, nargs="+", help="Resize image.") #(384, 384)
+    parser.add_argument("--image_size", default=384,type=int, nargs="+", help="Resize image.") #(384, 384)
     parser.add_argument('--output_dir', default='/home/mohamad_h/LINUM/Results/AIPs_labeled/', help='Path where to save visualizations.')
     parser.add_argument("--threshold", type=float, default=0.1, help="""We visualize masks
         obtained by thresholding the self-attention maps to keep xx% of the mass.""")
@@ -41,10 +42,10 @@ def parse_args():
     parser.add_argument("--save_query", type=bool, default=False, help="""To save the queried attention maps with the target points""")
     # boolean to save the feature maps
     parser.add_argument("--save_feature", type=bool, default=False, help="""To save the feature maps""")
-    parser.add_argument("--batch_size", type=int, default=32, help="""Batch size""")
+    parser.add_argument("--batch_size", type=int, default=14, help="""Batch size""")
     parser.add_argument('--wandb', default=True, help='whether to use wandb')
     parser.add_argument('--tag', default='k-means', help='tag for wandb')
-    parser.add_argument('--method', default='ours', help='method to implement: ours, otsu, k-means, k-means_ours, chan-vese, chan-vese_ours')
+    parser.add_argument('--method', default='ours', help='method to implement: ours, otsu, k-means, k-means_ours, chan-vese, chan-vese_ours, heatmap_threshold')
     parser.add_argument('--median_filter', default=10, help='whether to use median filter')
     args = parser.parse_args()
     return args
@@ -154,17 +155,19 @@ def validate(args, data_loader, model, device , logger=None, wandb=None, epoch=0
                 average_attentions = concat_crops(average_crops)
                 img = concat_crops(images[i,:,0,:,:])
                 img = torch.tensor(img)
-                temp = torch.zeros([1, 3, args.image_size[0], args.image_size[1]], dtype=torch.float32)
+                temp = torch.zeros([1, 3, args.image_size, args.image_size], dtype=torch.float32)
                 temp[0][0] = img
                 temp[0][1] = img
                 temp[0][2] = img
                 img = temp
 
 
-            if args.method == "otsu" or args.method == "ours":
-                output, original_otsu = threshold(transform(img.squeeze(0)).convert("L") , average_attentions, save=False)
+            if args.method == "otsu" or args.method == "ours" or args.method == "heatmap_threshold":
+                output, original_otsu, heatmap_otsu = threshold(transform(img.squeeze(0)).convert("L") , average_attentions, save=False)
             if args.method == "otsu":
                 output = original_otsu
+            if args.method == "heatmap_threshold":
+                output = heatmap_otsu
             if args.method == "k-means" or args.method == "k-means_ours":
                 output, output_kmeans = kmeans(transform(img.squeeze(0)).convert("L") , average_attentions, save=False)
             if args.method == "k-means":
@@ -172,7 +175,25 @@ def validate(args, data_loader, model, device , logger=None, wandb=None, epoch=0
             if args.method == "chan-vese" or args.method == "chan-vese_ours":
                 output, original_cv = chan_vese(transform(img.squeeze(0)).convert("L") , average_attentions, save=False)
             if args.method == "chan-vese":
-                output = original_cv 
+                output = original_cv
+            if args.method == "k-means_feature_clustering":
+                nb_im = attentions[0].shape[0]  # Batch size
+                nh = attentions[0].shape[1]  # Number of heads
+                nb_tokens = attentions[0].shape[2]  # Number of tokens
+                qkv = qkv[0]
+                q, k, v = qkv[0], qkv[1], qkv[2]
+                k = k.transpose(1, 2)
+                k = k.reshape(nb_im, nb_tokens, -1) # 1,6,6644,64 -> 1,6644,6,64 -> 1,6644,384
+                q = q.transpose(1, 2).reshape(nb_im, nb_tokens, -1)
+                v = v.transpose(1, 2).reshape(nb_im, nb_tokens, -1)
+                kt = k[:,1:,:]
+                kt = kt.reshape((1, 48, 48, 384))
+                kt = kt.permute(0, 3, 1, 2)  # Move the channel dimension to the second position
+                kt = F.interpolate(kt.detach().cpu(), size=(384, 384), mode='bilinear', align_corners=False)
+                kt = kt.permute(0, 2, 3, 1)
+                kmeans_feature_segmentation = kmeans_feature(img,kt, save=False)
+                output = kmeans_feature_segmentation
+
             output = torch.tensor(output).unsqueeze(0)
             output = output/255
             # target = target.squeeze(0)
@@ -252,19 +273,19 @@ if __name__ == "__main__":
     if args.wandb:
         wandb.login()
         wandb.init(
-            project="evaluation_temp",
+            project="temp",
             entity="mohamad_hawchar",
-            name = f"{args.arch}_{args.patch_size}_{args.method}_{args.crop}_{args.pretrained_weights.split('/')[-2]}_{args.pretrained_weights.split('/')[-1]}",
+            name = f"{args.arch}_{args.patch_size}_{args.image_size}_{args.method}_{args.crop}_{args.pretrained_weights.split('/')[-2]}_{args.pretrained_weights.split('/')[-1]}",
             config=args
             )
         args = wandb.config
         print(args.image_size)
         print(type(args.image_size))
         #check if args.image_size is tuple or not, if not, convert it to tuple
-        if type(args.image_size) is not list:
-            print("FML")
-            args.image_size = [args.image_size, args.image_size]
-        print(args.image_size)
+        # if type(args.image_size) is not list:
+        #     print("FML")
+        #     args.image_size = [args.image_size, args.image_size]
+        # print(args.image_size)
     main(args)
     if args.wandb:
         wandb.finish()

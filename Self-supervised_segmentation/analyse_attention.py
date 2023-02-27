@@ -16,9 +16,10 @@ from data import AIP_Dataset, Croped_Dataset
 from scipy.ndimage import median_filter
 from torch.utils.data import DataLoader
 from glob import glob
-from utils import threshold, compute_attention,create_dir, execution_time,concat_crops, yen_threshold, morphology_cleaning
+from utils import threshold, compute_attention,create_dir, execution_time,concat_crops, yen_threshold, morphology_cleaning, kmeans_feature
 import time
 import tensorflow as tf
+import torch.nn.functional as F
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Visualize Self-Attention maps')
@@ -44,7 +45,7 @@ if __name__ == '__main__':
     # boolean to save the queried attention maps with the target points
     parser.add_argument("--save_query", type=bool, default=False, help="""To save the queried attention maps with the target points""")
     # boolean to save the feature maps
-    parser.add_argument("--save_feature", type=bool, default=True, help="""To save the feature maps""")
+    parser.add_argument("--save_feature", type=bool, default=False, help="""To save the feature maps""")
     args = parser.parse_args()
 
     torch.cuda.empty_cache()
@@ -149,8 +150,12 @@ if __name__ == '__main__':
                     kt = k[:,1:,:]
                     # kt = kt.reshape((kt.shape[0], np.sqrt(kt.shape[1]),np.sqrt(kt.shape[1]), kt.shape[2]))
                     kt = kt.reshape((1, 48, 48, 384))
-                    kt = tf.image.resize(kt.detach().cpu(), (384, 384), method=tf.image.ResizeMethod.BICUBIC)
-
+                    # kt = kt.unsqueeze(0)
+                    # kt = tf.image.resize(kt.detach().cpu(), (384, 384), method=tf.image.ResizeMethod.BICUBIC)
+                    kt = kt.permute(0, 3, 1, 2)  # Move the channel dimension to the second position
+                    kt = F.interpolate(kt.detach().cpu(), size=(384, 384), mode='bilinear', align_corners=False)
+                    kt = kt.permute(0, 2, 3, 1)
+                    kmeans_feature_segmentation = kmeans_feature(image,kt,output_directory, save=True)
                     for f in range(1,k.shape[2]):
                         print(f"Saving feature {f}")
                         feature_image = kt[0,:,:,f]

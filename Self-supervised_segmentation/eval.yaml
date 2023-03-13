@@ -3,7 +3,7 @@ program: eval.py
 method: grid
 
 name: sweep
-project: UNET_OCM
+project: Hela_OCM
 entity : mohamad_hawchar
 
 metric:
@@ -11,14 +11,17 @@ metric:
   name: jaccard
 
 parameters:
-  # image_size:
-  #   value: 384
-  # pretrained_weights:
-  #   values: [
-  #     "/home/mohamad_h/output/vit_small/VIT_8_MSC_384_8B_0.3R_8MP/ckpt_epoch_10.pth"
-  #     ]
+  image_size:
+    value: 1152
+  pretrained_weights:
+    values: [
+      "/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/vit_small/ROIHELA_384_16B_0.3R_8MP/ckpt_epoch_29.pth",
+      "/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/vit_small/Random_HELA_384_16B_0.3R_8MP/ckpt_epoch_20.pth"
+      ]
+  eval_dataset_path:
+    value: "/home/mohamad_h/data/Fluo-N2DL-HeLa/Fluo-N2DL-HeLa_v1"
   crop:
-    values: [1]
+    values: [4,16]
   method:
-    values: [otsu, k-means, chan-vese, chan-vese_ours, k-means_feature_clustering]
+    values: [ours]
       

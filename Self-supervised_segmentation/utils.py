@@ -46,7 +46,11 @@ def execution_time(start_time, end_time):
 def threshold(img , attention, output_directory = "",save = True, name = None):
     # multipli img with average attention
     # img = np.permute(img, (1,2,0))
-    result = img * attention / np.max(attention)
+    ## test
+    # resize the attention map to its original size divise by 8
+    ### test
+    attention = attention / np.max(attention)
+    result = img * attention
     # attention = min_max_normalize(attention)
     #convert resul to CV_8UC1
     # result = img * attention / np.max(attention)
@@ -71,9 +75,9 @@ def threshold(img , attention, output_directory = "",save = True, name = None):
         create_dir(os.path.join(output_directory,file_name))
     else:
         file_name = ""
-    fname = os.path.join(output_directory,file_name, "OTSU_th" + "_average.png")
-    # save as black and white cmap
+    
     if save:
+        fname = os.path.join(output_directory,file_name, "OTSU_th" + "_average.png")
         plt.imsave(fname=fname, arr=th, format='png', cmap='gray')
         print(f"{fname} saved.")
         fname = os.path.join(output_directory, "OTSU_th" + "_original.png")
@@ -83,6 +87,8 @@ def threshold(img , attention, output_directory = "",save = True, name = None):
         plt.imsave(fname=fname, arr=result, format='png', cmap='gray')
         fname = os.path.join(output_directory, "heatmap_otsu" + "_attention.png")
         plt.imsave(fname=fname, arr=th3, format='png', cmap='gray')
+        fname = os.path.join(output_directory, "temp.png")
+        plt.imsave(fname=fname, arr=attention, format='png')
     return th, th2, th3
 
 
@@ -219,7 +225,7 @@ def yen_threshold(img, output_directory = '', save = True):
     return binary
 
 def get_ROIs(img):
-    img = remove_small_objects(img, min_size=10, connectivity=2, in_place=False)
+    img = remove_small_objects(img, min_size=20, connectivity=2, in_place=False)
     img = binary_closing(img, disk(2))
     img, num = label(img, return_num = True)
     return img

@@ -1,6 +1,8 @@
 
-import numpy as np
+
 import os
+os.environ['CUDA_VISIBLE_DEVICES'] = "3"
+import numpy as np
 from glob import glob  # exctrac the images
 import time
 from tqdm import tqdm  # for the progress bar
@@ -14,194 +16,10 @@ from sklearn.metrics import accuracy_score, f1_score, jaccard_score, precision_s
 import random
 import torch.nn.functional as F
 import wandb
-
-log_wandb = True
-H = 256
-W = 256
-ratio = 0.2
-config = {
-    "H": H,
-    "W": W,
-    "ratio": ratio,
-}
-
-if log_wandb == True:
-    wandb.login()
-    wandb.init(
-        project="todelete",
-        entity="mohamad_hawchar",
-        name=f"unet_0.2",
-        config=config,
-    )
-    config = wandb.config
-    H = config.H
-    W = config.W
-    ratio = config.ratio
-
-
-class convolution_block(nn.Module):
-    def __init__(self, in_c, out_c):
-        super().__init__()
-
-        self.conv1 = nn.Conv2d(in_c, out_c, kernel_size=3, padding=1)
-        self.bn1 = nn.BatchNorm2d(out_c)
-
-        self.conv2 = nn.Conv2d(out_c, out_c, kernel_size=3, padding=1)
-        self.bn2 = nn.BatchNorm2d(out_c)
-
-        self.relu = nn.ReLU()
-
-    def forward(self, inputs):
-        x = self.conv1(inputs)
-        x = self.bn1(x)
-        x = self.relu(x)
-
-        x = self.conv2(x)
-        x = self.bn2(x)
-        x = self.relu(x)
-
-        return x
-
-
-class encoder_block(nn.Module):
-    def __init__(self, in_c, out_c):
-        super().__init__()
-
-        self.conv = convolution_block(in_c, out_c)
-        self.pool = nn.MaxPool2d((2, 2))
-
-    def forward(self, inputs):
-        x = self.conv(inputs)
-        p = self.pool(x)
-
-        return x, p
-
-
-class decoder_block(nn.Module):
-    def __init__(self, in_c, out_c):
-        super().__init__()
-
-        self.up = nn.ConvTranspose2d(
-            in_c, out_c, kernel_size=2, stride=2, padding=0)
-        self.conv = convolution_block(out_c+out_c, out_c)
-
-    def forward(self, inputs, skip):
-        x = self.up(inputs)
-        x = torch.cat([x, skip], axis=1)
-        x = self.conv(x)
-        return x
-
-
-class build_unet(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-        """ Encoder """
-        self.e1 = encoder_block(3, 64)
-        self.e2 = encoder_block(64, 128)
-        self.e3 = encoder_block(128, 256)
-        self.e4 = encoder_block(256, 512)
-
-        """ Bottleneck """
-        self.b = convolution_block(512, 1024)
-
-        """ Decoder """
-        self.d1 = decoder_block(1024, 512)
-        self.d2 = decoder_block(512, 256)
-        self.d3 = decoder_block(256, 128)
-        self.d4 = decoder_block(128, 64)
-
-        """ Classifier """
-        self.outputs = nn.Conv2d(64, 1, kernel_size=1, padding=0)
-
-    def forward(self, inputs):
-        """ Encoder """
-        s1, p1 = self.e1(inputs)  # s1 = 1,64,334,334 p1 = 1,64,167,167
-        s2, p2 = self.e2(p1)  # s2 = 1,128,167,167 p2 = 1,128,83,83
-        s3, p3 = self.e3(p2)  # s3 = 1,256,83,83 p3 = 1,256,41,41
-        s4, p4 = self.e4(p3)  # s4 = 1,512,41,41 p4 = 1,512,20,20
-
-        """ Bottleneck """
-        b = self.b(p4)  # b = 1,1024,20,20
-
-        """ Decoder """
-        d1 = self.d1(b, s4)
-        d2 = self.d2(d1, s3)
-        d3 = self.d3(d2, s2)
-        d4 = self.d4(d3, s1)
-
-        outputs = self.outputs(d4)
-
-        return outputs
-
-"""## Utils"""
-
-""" Seeding the random """
-
-
-def seeding(seed):
-    random.seed(seed)
-    os.environ["PYTHONHASHSEED"] = str(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.backends.cudnn.deterministic = True
-
-
-""" Create a directory. """
-
-
-def create_dir(path):
-    if not os.path.exists(path):
-        os.makedirs(path)
-
-
-""" Calculate the time taken """
-
-
-def epoch_time(start_time, end_time):
-    elapsed_time = end_time - start_time
-    elapsed_mins = int(elapsed_time / 60)
-    elapsed_secs = int(elapsed_time - (elapsed_mins * 60))
-    return elapsed_mins, elapsed_secs
-
-
-class DiceLoss(nn.Module):
-    def __init__(self, weight=None, size_average=True):
-        super(DiceLoss, self).__init__()
-
-    def forward(self, inputs, targets, smooth=1):
-        inputs = torch.sigmoid(inputs)
-
-        # flatten label and prediction tensors
-        inputs = inputs.view(-1)
-        targets = targets.view(-1)
-
-        intersection = (inputs * targets).sum()
-        dice = (2.*intersection + smooth) / \
-            (inputs.sum() + targets.sum() + smooth)
-
-        return 1 - dice
-
-
-class DiceBCELoss(nn.Module):
-    def __init__(self, weight=None, size_average=True):
-        super(DiceBCELoss, self).__init__()
-
-    def forward(self, inputs, targets, smooth=1):
-        inputs = torch.sigmoid(inputs)
-
-        # flatten label and prediction tensors
-        inputs = inputs.view(-1)
-        targets = targets.view(-1)
-
-        intersection = (inputs * targets).sum()
-        dice_loss = 1 - (2.*intersection + smooth) / \
-            (inputs.sum() + targets.sum() + smooth)
-        BCE = F.binary_cross_entropy(inputs, targets, reduction='mean')
-        Dice_BCE = BCE + dice_loss
-
-        return Dice_BCE
+from model import build_finetune_model, LinearProbing
+from utils import seeding, create_dir, execution_time, DiceLoss
+from config import get_config
+import argparse
 
 
 class Dataset(Dataset):
@@ -280,7 +98,7 @@ def smooth(x, size):
     return np.convolve(x, np.ones(size)/size, mode='valid')
 
 
-def fully_train(net, model_name):
+def fully_train(net, model_name, config):
     """ Seeding """
     seeding(42)
 
@@ -302,26 +120,26 @@ def fully_train(net, model_name):
         glob("/home/mohamad_h/data/Fluo-N2DL-HeLa/Fluo-N2DL-HeLa_v1/images/*"))
     labels = sorted(
         glob("/home/mohamad_h/data/Fluo-N2DL-HeLa/Fluo-N2DL-HeLa_v1/labels/*"))
-    train_x = images[:50]
-    train_y = labels[:50]
-    valid_x = images[50:70]
-    valid_y = labels[50:70]
-    train_x = train_x[:int(len(train_x)*ratio)]
-    train_y = train_y[:int(len(train_y)*ratio)]
+    train_x = images[:25]
+    train_y = labels[:25]
+    valid_x = images[25:30]
+    valid_y = labels[25:30]
+    train_x = train_x[:int(len(train_x)*config.ratio)]
+    train_y = train_y[:int(len(train_y)*config.ratio)]
 
     data_str = f"Dataset Size:\nTrain: {len(train_x)} / {len(train_y)} - Valid: {len(valid_x)} / {len(valid_y)}\n"
     print(data_str)
 
     """ Hyperparameters """
-    size = (H, W)
-    batch_size = 8
+    size = (config.H, config.W)
+    batch_size = 2
     num_epochs = 50
     lr = 1e-4
     checkpoint_path = f"files/{model_name}.pth"
 
     """ Dataset and loader """
-    train_dataset = Dataset(train_x, train_y, image_size=H)
-    valid_dataset = Dataset(valid_x, valid_y, image_size=H)
+    train_dataset = Dataset(train_x, train_y, image_size=config.H)
+    valid_dataset = Dataset(valid_x, valid_y, image_size=config.H)
 
     train_loader = DataLoader(
         dataset=train_dataset,
@@ -338,9 +156,9 @@ def fully_train(net, model_name):
     )
 
     device = torch.device('cuda')
-    model = net()
-    model = model.to(device)
-    if log_wandb == True:
+    # model = net()
+    model = net.to(device)
+    if config.WANDB == True:
         wandb.watch(model)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
@@ -369,7 +187,7 @@ def fully_train(net, model_name):
             torch.save(model.state_dict(), checkpoint_path)
 
         end_time = time.time()
-        epoch_mins, epoch_secs = epoch_time(start_time, end_time)
+        epoch_mins, epoch_secs = execution_time(start_time, end_time)
 
         data_str = f'Epoch: {epoch+1:02} | Epoch Time: {epoch_mins}m {epoch_secs}s\n'
         data_str += f'\tTrain Loss: {train_loss:.3f}\n'
@@ -377,8 +195,8 @@ def fully_train(net, model_name):
 
         train_losses.append(train_loss)
         valid_losses.append(valid_loss)
-        # if log_wandb == True:
-        #     wandb.log({"Train Loss": train_loss, "Valid Loss": valid_loss})
+        if config.WANDB == True:
+            wandb.log({"Train Loss": train_loss, "Valid Loss": valid_loss})
         print(data_str)
     plt.plot(smooth(train_losses, 1), 'r-', label='training')
     plt.plot(smooth(valid_losses, 1), 'b-', label='validation')
@@ -425,7 +243,7 @@ def mask_parse(mask):
     return mask
 
 
-def fully_test(net, model_name):
+def fully_test(net, model_name, config):
     """ Seeding """
     seeding(42)
 
@@ -442,19 +260,20 @@ def fully_test(net, model_name):
         glob("/home/mohamad_h/data/Fluo-N2DL-HeLa/Fluo-N2DL-HeLa_v1/images/*"))
     labels = sorted(
         glob("/home/mohamad_h/data/Fluo-N2DL-HeLa/Fluo-N2DL-HeLa_v1/labels/*"))
-    test_x = images[70:]
-    test_y = labels[70:]
+    test_x = images[30:]
+    test_y = labels[30:]
 
     """ Hyperparameters """
 
-    size = (W, H)
+    size = (config.W, config.H)
     checkpoint_path = f"files/{model_name}.pth"
 
     """ Load the checkpoint """
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    model = net()
-    model = model.to(device)
+    # model = net()
+    model = net.to(device)
+    # model = model.to(device)
     model.load_state_dict(torch.load(checkpoint_path, map_location=device))
     model.eval()
     loss_fn = DiceLoss()
@@ -524,7 +343,7 @@ def fully_test(net, model_name):
     roc = metrics_score[5]/len(test_x)
     loss = loss / len(test_x)
     print(f"Jaccard: {jaccard:1.4f} - F1: {f1:1.4f} - Recall: {recall:1.4f} - Precision: {precision:1.4f} - Acc: {acc:1.4f} - ROC-AUC : {roc:1.4f}")
-    if log_wandb == True:
+    if config.WANDB == True:
         print("Logging to wandb")
         wandb.log({
             "accuracy": acc,
@@ -544,19 +363,49 @@ def fully_test(net, model_name):
     #   print("FPS: ", fps)
 
 
-"""## Models Training, Testing & Results
+def main():
+    args = argparse.Namespace()
+    args.patch_size = 8
+    args.image_size = 384
+    args.pretrained_weights = '/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/vit_small/VIT_8_AM_384_16B_0.3R_8MP/ckpt_epoch_29.pth'
+    args.checkpoint_key = "teacher"
+    args.arch = 'vit_small'
+    args.opts = None
+    args.wandb = True
+    args.H = 384
+    args.W = 384
+    args.ratio = 1.0
+    args.finetune = True
+    config = get_config(args)
+    
 
-### Unet Results
-"""
+    if config.WANDB == True:
+        wandb.login()
+        wandb.init(
+            project="todelete",
+            entity="mohamad_hawchar",
+            name=f"lp_1.0",
+            config=config,
+        )
+        config3 = wandb.config
 
-tl_UNet, vl_UNet = fully_train(build_unet, "unet")
+    encoder = build_finetune_model(config)
+    if config.finetune == False:
+        for param in encoder.parameters():
+            param.requires_grad = False
+    linearprob_model = LinearProbing(encoder=encoder, encoder_stride=8, layer_num=2)
+    print(linearprob_model)
+    tl_UNet, vl_UNet = fully_train(linearprob_model, "unet", config)
 
-fully_test(build_unet, "unet")
-if log_wandb == True:
-    wandb.finish()
+    fully_test(linearprob_model, "unet",config)
+    if config.WANDB == True:
+        wandb.finish()
 
-plt.plot(smooth(vl_UNet, 1), 'r-', label='vl_unet')
-plt.legend()
-plt.show
+    plt.plot(smooth(vl_UNet, 1), 'r-', label='vl_unet')
+    plt.legend()
+    plt.show
 
-torch.cuda.empty_cache()
+    torch.cuda.empty_cache()
+
+if __name__ == "__main__":
+    main()

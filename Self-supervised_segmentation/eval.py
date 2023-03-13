@@ -12,22 +12,22 @@ from data import build_eval_loader
 import wandb
 from timm.utils import AverageMeter
 import torchvision.transforms as T
-import torch.nn as nn 
 from utils import DiceLoss
 from matplotlib import pyplot as plt
 import torch.nn.functional as F
+import cv2
 
 def parse_args():
     parser = argparse.ArgumentParser('Visualize Self-Attention maps')
     parser.add_argument('--arch', default='vit_small', type=str,
         choices=['vit_tiny', 'vit_small', 'vit_base'], help='Architecture (support only ViT atm).')
     parser.add_argument('--patch_size', default=8, type=int, help='Patch resolution of the model.')
-    parser.add_argument('--pretrained_weights', default='/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/vit_small/VIT_8_AM_384_16B_0.3R_8MP/ckpt_epoch_29.pth', type=str,
+    parser.add_argument('--pretrained_weights', default='/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/vit_small/VIT_8_Hela_224_32B_0.3R_8MP/ckpt_epoch_29.pth', type=str,
         help="Path to pretrained weights to load.")
     parser.add_argument("--checkpoint_key", default="teacher", type=str,
         help='Key to use in the checkpoint (example: "teacher")')
-    parser.add_argument("--eval_dataset_path", default="/home/mohamad_h/data/AIP_annotated_data_cleaned/", type=str, help="Path of the image to load.")
-    parser.add_argument("--image_size", default=384,type=int, nargs="+", help="Resize image.") #(384, 384)
+    parser.add_argument("--eval_dataset_path", default="/home/mohamad_h/data/Fluo-N2DL-HeLa/Fluo-N2DL-HeLa_v1/", type=str, help="Path of the image to load.")
+    parser.add_argument("--image_size", default=720,type=int, nargs="+", help="Resize image.") #(384, 384)
     parser.add_argument('--output_dir', default='/home/mohamad_h/LINUM/Results/AIPs_labeled/', help='Path where to save visualizations.')
     parser.add_argument("--threshold", type=float, default=0.1, help="""We visualize masks
         obtained by thresholding the self-attention maps to keep xx% of the mass.""")
@@ -46,7 +46,7 @@ def parse_args():
     parser.add_argument('--wandb', default=True, help='whether to use wandb')
     parser.add_argument('--tag', default='k-means', help='tag for wandb')
     parser.add_argument('--method', default='ours', help='method to implement: ours, otsu, k-means, k-means_ours, chan-vese, chan-vese_ours, heatmap_threshold')
-    parser.add_argument('--median_filter', default=10, help='whether to use median filter')
+    parser.add_argument('--median_filter', default=1, help='whether to use median filter')
     args = parser.parse_args()
     return args
 
@@ -161,7 +161,9 @@ def validate(args, data_loader, model, device , logger=None, wandb=None, epoch=0
                 temp[0][2] = img
                 img = temp
 
-
+            average_attentions = cv2.resize(average_attentions, (average_attentions.shape[1]//8, average_attentions.shape[0]//8))
+            # interpolate the attention map to the original size with bicubic interpolation
+            average_attentions = cv2.resize(average_attentions, (img.shape[-1], img.shape[-1]), interpolation=cv2.INTER_LINEAR)
             if args.method == "otsu" or args.method == "ours" or args.method == "heatmap_threshold":
                 output, original_otsu, heatmap_otsu = threshold(transform(img.squeeze(0)).convert("L") , average_attentions, save=False)
             if args.method == "otsu":
@@ -273,9 +275,10 @@ if __name__ == "__main__":
     if args.wandb:
         wandb.login()
         wandb.init(
-            project="temp",
+            project="temp2",
             entity="mohamad_hawchar",
-            name = f"{args.arch}_{args.patch_size}_{args.image_size}_{args.method}_{args.crop}_{args.pretrained_weights.split('/')[-2]}_{args.pretrained_weights.split('/')[-1]}",
+            # name = f"{args.image_size}_{args.method}_{args.crop}_{args.pretrained_weights.split('/')[-2]}_{args.pretrained_weights.split('/')[-1]}",
+            name = f"{args.method}_{args.crop}_{args.pretrained_weights.split('/')[-2]}_{args.pretrained_weights.split('/')[-1]}",
             config=args
             )
         args = wandb.config

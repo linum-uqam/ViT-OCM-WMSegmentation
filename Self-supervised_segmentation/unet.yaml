@@ -3,7 +3,7 @@ program: unet.py
 method: grid
 
 name: sweep
-project: UNET_OCM
+project: Hela_OCM
 entity : mohamad_hawchar
 
 metric:
@@ -12,5 +12,5 @@ metric:
 
 parameters:
   ratio:
-    values: [0.3,0.4,0.5,0.7,0.9,1.0]
+    values: [0.1,0.3]
       

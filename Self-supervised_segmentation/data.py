@@ -216,8 +216,11 @@ class SimMIMTransform:
         if self.roi_masking:
             # otsu thresholding using skimage for a pil image
             binary = pil_img.convert('L')
+            # binary = np.array(binary)
+            # binary = binary > threshold_otsu(binary)
             binary = np.array(binary)
-            binary = binary > threshold_otsu(binary)
+            binary[binary > 10] = 255
+            binary[binary <= 10] = 0
             rois = get_ROIs(binary)
             # keep the values in mask that intersect with the ROIs
             rois = resize(rois, (mask.shape[0], mask.shape[1]), order=0, anti_aliasing=False, preserve_range=True)
@@ -280,6 +283,8 @@ def build_eval_loader(args):
 
     images = sorted(glob(args.eval_dataset_path + "/images/*")) 
     labels = sorted(glob(args.eval_dataset_path + "/labels/*"))
+    images = images[70:]
+    labels = labels[70:]
     print("images: ", len(images))
     print("labels: ", len(labels))
     croped_transform = pth_transforms.Compose([

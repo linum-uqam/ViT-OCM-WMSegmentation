@@ -19,7 +19,7 @@ print ('Current cuda device ', torch.cuda.current_device())
 # git add --all -- ':!images/' ':!AIPs_40X/'
 # manual segmentations
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = "0, 1, 2, 3,4,5 "
+# os.environ['CUDA_VISIBLE_DEVICES'] = "0, 1, 2, 3,4,5 "
 import argparse
 import torch
 from data import build_loader_simmim, build_eval_loader
@@ -56,23 +56,23 @@ def parse_option():
     parser.add_argument("--checkpoint_key", default="teacher", type=str,
         help='Key to use in the checkpoint (example: "teacher")')
     parser.add_argument("--image_path", default="/home/mohamad_h/data/Data_OCM_ALL/", type=str, help="Path of the image to load.")
-    parser.add_argument("--image_size", default=384, type=int, nargs="+", help="Resize image.")
+    parser.add_argument("--image_size", default=384, type=int, help="Resize image.")
     parser.add_argument('--output_dir', default='/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/', help='Path where to save visualizations.')
     parser.add_argument('--output', default='output', type=str, metavar='PATH',
         help='root of output folder, the full path is <output>/<model_name>/<tag> (default: output)')
     parser.add_argument('--epochs', default=30, type=int, help='number of total epochs to run')
     parser.add_argument('--warmup_epochs', default=20, type=int, help='number of warmup epochs to run')
     parser.add_argument('--num_workers', default=1, type=int, help='number of workers')
-    parser.add_argument('--batch_size', default=16, type=int, help='batch size')
+    parser.add_argument('--batch_size', default=3, type=int, help='batch size')
     parser.add_argument('--mask_patch_size', default=8, type=int, help='patch size for the mask')
     parser.add_argument('--mask_ratio', default=0.3, type=float, help='ratio of the mask')
-    parser.add_argument('--tag', default='AM_224_Cos_32B_sumL_0.3M_16MP', type=str, help='tag of the experiment')
-    parser.add_argument('--wandb', default=True, help='whether to use wandb')
+    parser.add_argument('--tag', default='AM', type=str, help='tag of the experiment')
+    parser.add_argument('--wandb', default=False, help='whether to use wandb')
     parser.add_argument('--loss_operation', default='max', type=str, help='mean or sum or max')
     parser.add_argument("--eval_dataset_path", default="/home/mohamad_h/data/AIP_annotated_data_cleaned/", help="evaluate the model on the given dataset")
     parser.add_argument("--crop", type=int, default=1, help="""Amount of croping (4 or 16)""")
-    parser.add_argument('--median_filter',type=int, default=10, help='whether to use median filter')
-    parser.add_argument('--roi_masking', default=True, type=bool, help='whether to use roi masking')
+    parser.add_argument('--median_filter',type=int, default=1, help='whether to use median filter')
+    parser.add_argument('--roi_masking', default=False, type=bool, help='whether to use roi masking')
 
     args = parser.parse_args()
     args = get_config(args)
@@ -82,21 +82,22 @@ def main(args):
     if args.WANDB == True:
         wandb.login()
         wandb.init(
-            project="temp",
+            project="temp4",
             entity="mohamad_hawchar",
-            name = f"VIT_8_AM_{args.DATA.IMG_SIZE}_{args.DATA.BATCH_SIZE}B_{args.DATA.MASK_RATIO}R_{args.DATA.MASK_PATCH_SIZE}MP",
+            name = f"{args.TAG}_{args.DATA.IMG_SIZE}_{args.DATA.BATCH_SIZE}B_{args.DATA.MASK_RATIO}R_{args.DATA.MASK_PATCH_SIZE}MP",
             config=args
             )
 
     data_loader_train = build_loader_simmim(args)
     data_loader_eval = build_eval_loader(args)
     logger.info(f"Creating model:{args.MODEL.NAME}/{args.MODEL.PATCH_SIZE}")
-    gpu = 0
+    gpu = 3
     print(torch.cuda.is_available())
     print(torch.cuda.device_count())
     encoder = build_model(args)
     model = MIM(encoder=encoder, encoder_stride=8)
-    model = nn.DataParallel(model, device_ids=[0, 1, 2, 3,4,5])
+    # model = nn.DataParallel(model, device_ids=[0, 1, 2, 3,4,5])
+    model = nn.DataParallel(model, device_ids=[3,4])
     torch.cuda.set_device(gpu)
     model.cuda(gpu)
     logger.info(str(model))
@@ -122,7 +123,6 @@ def main(args):
 def train_one_epoch(config, model, data_loader, data_loader_eval, optimizer, epoch, lr_scheduler, device = 'cuda'):
     model.train()
     optimizer.zero_grad()
-
     num_steps = len(data_loader)
     batch_time = AverageMeter()
     loss_meter = AverageMeter()
@@ -134,7 +134,6 @@ def train_one_epoch(config, model, data_loader, data_loader_eval, optimizer, epo
         img = img.cuda(non_blocking=True)
         mask = mask.cuda(non_blocking=True)
         loss, x_rec, mask = model(img, mask)
-
         if config.TRAIN.ACCUMULATION_STEPS > 1:
             loss = loss / config.TRAIN.ACCUMULATION_STEPS
             if config.TRAIN.CLIP_GRAD:

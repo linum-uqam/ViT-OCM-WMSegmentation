@@ -1,11 +1,10 @@
 # git add --all -- ':!images/' ':!AIPs_40X/' :'!output/' :'!wandb/' :'!files/' :'!results/'
 # git commit -m "UNET Evalutation"
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = "5"
+os.environ['CUDA_VISIBLE_DEVICES'] = "4"
 import argparse
 import matplotlib.pyplot as plt
 import torch
-import torch.nn as nn
 import torchvision
 from torchvision import transforms as pth_transforms
 import numpy as np
@@ -18,20 +17,19 @@ from torch.utils.data import DataLoader
 from glob import glob
 from utils import threshold, compute_attention,create_dir, execution_time,concat_crops, yen_threshold, morphology_cleaning, kmeans_feature
 import time
-import tensorflow as tf
 import torch.nn.functional as F
-
+import cv2
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Visualize Self-Attention maps')
     parser.add_argument('--arch', default='vit_small', type=str,
         choices=['vit_tiny', 'vit_small', 'vit_base'], help='Architecture (support only ViT atm).')
     parser.add_argument('--patch_size', default=8, type=int, help='Patch resolution of the model.')
-    parser.add_argument('--pretrained_weights', default='/home/mohamad_h/output/vit_small/AIP+M_224_multistepLR_60B_meanL/ckpt_epoch_25.pth', type=str,
+    parser.add_argument('--pretrained_weights', default='/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/vit_small/ROIHELA_384_16B_0.3R_8MP/ckpt_epoch_5.pth', type=str,
         help="Path to pretrained weights to load.")
     parser.add_argument("--checkpoint_key", default="teacher", type=str,
         help='Key to use in the checkpoint (example: "teacher")')
-    parser.add_argument("--image_path", default="/home/mohamad_h/data/Data_OCM_ALL/roi_0396_exp_2018-08-31_Brain08_2R-SOCT_roi_40x_Acquisitions_40x_Acquisitions_z34_A05_volume_OCM_(Random_40xROI).jpg", type=str, help="Path of the image to load.")
-    parser.add_argument("--image_size", default=(384, 384), type=int, nargs="+", help="Resize image.")
+    parser.add_argument("--image_path", default="/home/mohamad_h/data/Data_OCM_ALL/brain_09_z45_roi02.jpg", type=str, help="Path of the image to load.")
+    parser.add_argument("--image_size", default=(720, 720), type=int, nargs="+", help="Resize image.")
     parser.add_argument('--output_dir', default='/home/mohamad_h/LINUM/Results/AIPs/', help='Path where to save visualizations.')
     parser.add_argument("--threshold", type=float, default=0.1, help="""We visualize masks
         obtained by thresholding the self-attention maps to keep xx% of the mass.""")
@@ -92,8 +90,8 @@ if __name__ == '__main__':
         # user has not specified any image - we use our own image
         print("Please use the `--image_path` argument to indicate the path of the image you wish to visualize.")
         print("Since no image path have been provided, we take the first image in our dataset.")
-        img_name = "brain_02_z15_roi00.jpg"
-        directory_path = "/home/mohamad_h/data/40xmosaics_fullsize_subbg/"
+        img_name = "t081.png"
+        directory_path = "/home/mohamad_h/data/Fluo-N2DL-HeLa/Fluo-N2DL-HeLa_v1/images/"
         img_path = directory_path + img_name
     else:
         print(f"Provided image path {args.image_path} will be used.")
@@ -130,7 +128,7 @@ if __name__ == '__main__':
                 # average attentions over heads
                 average_attentions = np.mean(attention_response, axis=0)
                 # median filter scipy
-                average_attentions = median_filter(average_attentions, size=10)
+                average_attentions = median_filter(average_attentions, size=1)
                 # save original image
                 torchvision.utils.save_image(torchvision.utils.make_grid(image, normalize=True, scale_each=True), os.path.join(output_directory, "img.png"))
 
@@ -149,13 +147,13 @@ if __name__ == '__main__':
                     # turn k from 1,2304,384 to 1,384,384,384
                     kt = k[:,1:,:]
                     # kt = kt.reshape((kt.shape[0], np.sqrt(kt.shape[1]),np.sqrt(kt.shape[1]), kt.shape[2]))
-                    kt = kt.reshape((1, 48, 48, 384))
+                    kt = kt.reshape((1, image.shape[-1]//8, image.shape[-1]//8, 384))
                     # kt = kt.unsqueeze(0)
                     # kt = tf.image.resize(kt.detach().cpu(), (384, 384), method=tf.image.ResizeMethod.BICUBIC)
                     kt = kt.permute(0, 3, 1, 2)  # Move the channel dimension to the second position
-                    kt = F.interpolate(kt.detach().cpu(), size=(384, 384), mode='bilinear', align_corners=False)
+                    kt = F.interpolate(kt.detach().cpu(), size=(image.shape[-1], image.shape[-1]), mode='bilinear', align_corners=False)
                     kt = kt.permute(0, 2, 3, 1)
-                    kmeans_feature_segmentation = kmeans_feature(image,kt,output_directory, save=True)
+                    # kmeans_feature_segmentation = kmeans_feature(image,kt,output_directory, save=True)
                     for f in range(1,k.shape[2]):
                         print(f"Saving feature {f}")
                         feature_image = kt[0,:,:,f]
@@ -169,12 +167,16 @@ if __name__ == '__main__':
                     fname = os.path.join(output_directory, "attn-head" + str(j) + ".png")
                     plt.imsave(fname=fname, arr=attention_response[j], format='png')
                     print(f"{fname} saved.")
-                # save average attention
-                fname = os.path.join(output_directory, "attn-average.png")
-                plt.imsave(fname=fname, arr=average_attentions, format='png')
-                print(f"{fname} saved.")
+                
                 # save thresholded attention
                 if args.threshold is not None:
+                    average_attentions = cv2.resize(average_attentions, (average_attentions.shape[1]//8, average_attentions.shape[0]//8))
+                    # interpolate the attention map to the original size with bicubic interpolation
+                    average_attentions = cv2.resize(average_attentions, (original_img.size[-1], original_img.size[-1]), interpolation=cv2.INTER_LINEAR)
+                    # save average attention
+                    fname = os.path.join(output_directory, "attn-average.png")
+                    plt.imsave(fname=fname, arr=average_attentions, format='png')
+                    print(f"{fname} saved.")
                     threshold(original_img, average_attentions, output_directory)
                     if args.region_query:
                         binary = yen_threshold(original_img, output_directory, save=True)
@@ -205,7 +207,7 @@ if __name__ == '__main__':
                                 fig.savefig(fname ,bbox_inches='tight', pad_inches=0)
                                 plt.close(fig)
                         average_queried_attention_maps = np.mean(queried_attention_maps, axis=0)
-                        average_queried_median = median_filter(average_queried_attention_maps, size=10)
+                        average_queried_median = median_filter(average_queried_attention_maps, size=1)
                         if query_points == []:
                             print("No query points found.")
                         else:
@@ -213,6 +215,9 @@ if __name__ == '__main__':
                             plt.imsave(fname=fname, arr=average_queried_attention_maps, format='png')
                             fname = os.path.join(output_directory, "attn-average-queried-median.png")
                             plt.imsave(fname=fname, arr=average_queried_median, format='png')
+                            average_queried_median = cv2.resize(average_queried_median, (average_queried_median.shape[1]//8, average_queried_median.shape[0]//8))
+                            # interpolate the attention map to the original size with bicubic interpolation
+                            average_queried_median = cv2.resize(average_queried_median, (original_img.shape[-1], original_img.shape[-1]), interpolation=cv2.INTER_LINEAR)
                             threshold(original_img, average_queried_median, output_directory, save=True, name="attn-average-queried-threshold")
 
                 # save query analysis
@@ -261,7 +266,7 @@ if __name__ == '__main__':
                     # average attentions over heads
                     average_attentions = np.mean(attention_response, axis=0)
                     # median filter scipy
-                    average_attentions = median_filter(average_attentions, size=20)
+                    average_attentions = median_filter(average_attentions, size=1)
                     averaged_cropes.append(average_attentions)
 
                     # call threshold function on all crops in the images list
@@ -271,16 +276,16 @@ if __name__ == '__main__':
                     img = img.astype(np.uint8)
                     img = Image.fromarray(img)
                     img = img.convert('L')
-                    th1, th2 = threshold(img, average_attentions, args.output_dir, save=False)
+                    th1 = threshold(img, average_attentions, args.output_dir, save=False)
                     thresholded_crops.append(th1)
 
                 reconstructed_average = concat_crops(averaged_cropes)
 
-                reconstructed_thresholded_image = concat_crops(thresholded_crops)
-                # save thresholded image
-                fname = os.path.join(output_directory, "reconstructed_threshold.png")
-                plt.imsave(fname=fname, arr=reconstructed_thresholded_image, format='png',cmap='gray')
-                print(f"{fname} saved.")
+                # reconstructed_thresholded_image = concat_crops(thresholded_crops)
+                # # save thresholded image
+                # fname = os.path.join(output_directory, "reconstructed_threshold.png")
+                # plt.imsave(fname=fname, arr=reconstructed_thresholded_image, format='png',cmap='gray')
+                # print(f"{fname} saved.")
 
                 original_img = Image.open(img_path[0]).convert('RGB')
                 # resize to ars.image_size
@@ -290,12 +295,15 @@ if __name__ == '__main__':
 
                 original_img.save(os.path.join(output_directory, "img.png"))
                 print("img.png saved.")
-                # save average attention
-                fname = os.path.join(output_directory, "attn-average.png")
-                plt.imsave(fname=fname, arr=reconstructed_average, format='png')
-                print(f"{fname} saved.")
                 # save thresholded attention
                 if args.threshold is not None:
+                    reconstructed_average = cv2.resize(reconstructed_average, (reconstructed_average.shape[1]//8, reconstructed_average.shape[0]//8))
+                    # interpolate the attention map to the original size with bicubic interpolation
+                    reconstructed_average = cv2.resize(reconstructed_average, (original_img.size[-1], original_img.size[-1]), interpolation=cv2.INTER_LINEAR)
+                    # save average attention
+                    fname = os.path.join(output_directory, "attn-average.png")
+                    plt.imsave(fname=fname, arr=reconstructed_average, format='png')
+                    print(f"{fname} saved.")
                     threshold(original_img, reconstructed_average, output_directory)
 
 

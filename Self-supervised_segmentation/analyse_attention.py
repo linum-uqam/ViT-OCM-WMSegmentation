@@ -15,7 +15,7 @@ from data import AIP_Dataset, Croped_Dataset
 from scipy.ndimage import median_filter
 from torch.utils.data import DataLoader
 from glob import glob
-from utils import threshold, compute_attention,create_dir, execution_time,concat_crops, yen_threshold, morphology_cleaning, kmeans_feature
+from utils import threshold, compute_attention,create_dir, execution_time,concat_crops, yen_threshold, morphology_cleaning, sliding_window, concat_crops_overlap
 import time
 import torch.nn.functional as F
 import cv2
@@ -24,17 +24,18 @@ if __name__ == '__main__':
     parser.add_argument('--arch', default='vit_small', type=str,
         choices=['vit_tiny', 'vit_small', 'vit_base'], help='Architecture (support only ViT atm).')
     parser.add_argument('--patch_size', default=8, type=int, help='Patch resolution of the model.')
-    parser.add_argument('--pretrained_weights', default='/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/vit_small/ROIHELA_384_16B_0.3R_8MP/ckpt_epoch_5.pth', type=str,
+    parser.add_argument('--pretrained_weights', default='/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/vit_small/VIT_8_AM_384_16B_0.3R_8MP/ckpt_epoch_5.pth', type=str,
         help="Path to pretrained weights to load.")
     parser.add_argument("--checkpoint_key", default="teacher", type=str,
         help='Key to use in the checkpoint (example: "teacher")')
-    parser.add_argument("--image_path", default="/home/mohamad_h/data/Data_OCM_ALL/brain_09_z45_roi02.jpg", type=str, help="Path of the image to load.")
-    parser.add_argument("--image_size", default=(720, 720), type=int, nargs="+", help="Resize image.")
+    parser.add_argument("--image_path", default="/home/mohamad_h/data/Data_OCM_ALL/brain_09_z40_roi01.jpg", type=str, help="Path of the image to load.")
+    parser.add_argument("--image_size", default=(1152, 1152), type=int, nargs="+", help="Resize image.")
     parser.add_argument('--output_dir', default='/home/mohamad_h/LINUM/Results/AIPs/', help='Path where to save visualizations.')
     parser.add_argument("--threshold", type=float, default=0.1, help="""We visualize masks
         obtained by thresholding the self-attention maps to keep xx% of the mass.""")
     # Boolyan for croping 
-    parser.add_argument("--crop", type=int, default=1, help="""Amount of croping (4 or 16)""")
+    parser.add_argument("--crop", type=int, default=4, help="""Amount of croping (4 or 16)""")
+    parser.add_argument("--window_stride", type=int, default=128, help="""Stride of the sliding window""")
     # Attention query analysis mode boolean
     parser.add_argument("--region_query", type=bool, default=False, help="""To analyze the attention query or not""")
     parser.add_argument("--query_analysis", type=bool, default=False, help="""To analyze the attention query or not""")
@@ -253,6 +254,11 @@ if __name__ == '__main__':
                 image_name = img_path[0].split("/")[-1].split(".")[0]
                 output_directory = args.output_dir + image_name + f"/croped_{args.crop}/"
                 create_dir(output_directory)
+
+
+                # temp = crop_image_sliding_window(images, 360, 120)
+
+
                 for i in range(len(images)):
                     img = images[i]
                     img = img.to(device)
@@ -318,7 +324,7 @@ else:
 batch_size = 1
 
 start_time = time.time()
-if(args.crop > 1):
+if(args.crop > 1 or args.window_stride > 0):
     if args.crop != 4 and args.crop != 16:
         print("crop must be 4 or 16")
     else:

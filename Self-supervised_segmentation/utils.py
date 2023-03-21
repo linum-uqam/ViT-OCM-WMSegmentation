@@ -278,8 +278,6 @@ def morphology_cleaning(img, output_directory = '', save = True):
     return points
     
 
-
-# function that concatinates 16 crop parts of an image, use numpy
 def concat_crops(crops):
     crop_number = len(crops)
     crop_iteration = int(np.sqrt(crop_number))
@@ -294,6 +292,50 @@ def concat_crops(crops):
         else:
             vertical = np.concatenate((vertical, horizontal), axis=0)
     return vertical
+
+def concat_crops_overlap(crops, stride):
+    crop_number = len(crops)
+    crop_iteration = int(np.sqrt(crop_number))
+    vertical = []
+    stride = stride * 2
+    for i in range(crop_iteration):
+        horizontal = crops[i * crop_iteration]
+        for j in range(1, crop_iteration):
+            # Concatenate the current crop with the previous crop horizontally
+            left_window = horizontal
+            right_window = crops[i * crop_iteration + j]
+            crop_left = left_window[:, :-stride]
+            crop_right = right_window[ :, stride:]
+            overlap = (left_window[:, -stride:]// 2 + right_window[ :, :stride]// 2) 
+            horizontal = np.concatenate((crop_left, overlap, crop_right), axis=1)
+            
+        if i == 0:
+            # First row
+            vertical = horizontal
+        elif i == crop_iteration - 1:
+            # Last row
+            vertical = np.concatenate((vertical, horizontal[stride:, :]), axis=0)
+        else:
+            # Middle rows
+            top_overlap = (vertical[-stride:, :]// 2 + horizontal[:stride, :]// 2) 
+            vertical = np.concatenate((vertical[:-stride, :], top_overlap), axis=0)
+            vertical = np.concatenate((vertical, horizontal[stride:, :]), axis=0)
+    
+    return vertical
+
+def sliding_window(image, window_size, stride):
+    crops = []
+    height, width = image.size
+
+    # Iterate over the windows
+    for y in range(0, height - stride*2 , stride):
+        for x in range(0, width - stride*2 , stride):
+            # Crop the window and apply the transformation
+            window = image.crop((x, y, x + window_size, y + window_size))
+            window = np.array(window)
+            crops.append(window)
+
+    return crops
 
 def get_grad_norm(parameters, norm_type=2):
     if isinstance(parameters, torch.Tensor):

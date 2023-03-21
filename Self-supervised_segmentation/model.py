@@ -120,26 +120,18 @@ class VisionTransformerForFinetune(VisionTransformer):
 
     def forward(self, x):
         x = self.patch_embed(x)
-        
         B, L, _ = x.shape
-
-        # w = mask.flatten(1).unsqueeze(-1).type_as(mask_token)
-        # x = x * (1 - w) + mask_token * w
-
-        cls_tokens = self.cls_token.expand(B, -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
+        cls_tokens = self.cls_token.expand(B, -1, -1)  
         x = torch.cat((cls_tokens, x), dim=1)
-        
-        if self.img_size[0] != 224: #and self.interpolate_encoding
+        if self.img_size[0] != 224: 
             x  = x  + self.interpolate_pos_encoding(x , self.img_size[0], self.img_size[0])
         else:
             x = x + self.pos_embed
         x = self.pos_drop(x)
 
-        # rel_pos_bias = self.rel_pos_bias() if self.rel_pos_bias is not None else None
         for blk in self.blocks:
-            x = blk(x) #, rel_pos_bias=rel_pos_bias)
+            x = blk(x) 
         x = self.norm(x)
-
         x = x[:, 1:]
         B, L, C = x.shape
         H = W = int(L ** 0.5)

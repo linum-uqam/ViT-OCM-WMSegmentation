@@ -56,20 +56,20 @@ def parse_option():
     parser.add_argument("--checkpoint_key", default="teacher", type=str,
         help='Key to use in the checkpoint (example: "teacher")')
     parser.add_argument("--image_path", default="/home/mohamad_h/data/Data_OCM_ALL/", type=str, help="Path of the image to load.")
-    parser.add_argument("--image_size", default=384, type=int, help="Resize image.")
-    parser.add_argument('--output_dir', default='/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/', help='Path where to save visualizations.')
+    parser.add_argument("--image_size", default=224, type=int, help="Resize image.")
+    parser.add_argument('--output_dir', default='/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/temp/', help='Path where to save visualizations.')
     parser.add_argument('--output', default='output', type=str, metavar='PATH',
         help='root of output folder, the full path is <output>/<model_name>/<tag> (default: output)')
     parser.add_argument('--epochs', default=30, type=int, help='number of total epochs to run')
     parser.add_argument('--warmup_epochs', default=20, type=int, help='number of warmup epochs to run')
     parser.add_argument('--num_workers', default=1, type=int, help='number of workers')
-    parser.add_argument('--batch_size', default=3, type=int, help='batch size')
-    parser.add_argument('--mask_patch_size', default=8, type=int, help='patch size for the mask')
-    parser.add_argument('--mask_ratio', default=0.3, type=float, help='ratio of the mask')
+    parser.add_argument('--batch_size', default=16, type=int, help='batch size')
+    parser.add_argument('--mask_patch_size', default=16, type=int, help='patch size for the mask')
+    parser.add_argument('--mask_ratio', default=0.5, type=float, help='ratio of the mask')
     parser.add_argument('--tag', default='AM', type=str, help='tag of the experiment')
-    parser.add_argument('--wandb', default=False, help='whether to use wandb')
+    parser.add_argument('--wandb', default=True, help='whether to use wandb')
     parser.add_argument('--loss_operation', default='max', type=str, help='mean or sum or max')
-    parser.add_argument("--eval_dataset_path", default="/home/mohamad_h/data/AIP_annotated_data_cleaned/", help="evaluate the model on the given dataset")
+    parser.add_argument("--eval_dataset_path", default="/home/mohamad_h/data/AIP_annotated_data_cleaned", help="evaluate the model on the given dataset")
     parser.add_argument("--crop", type=int, default=1, help="""Amount of croping (4 or 16)""")
     parser.add_argument('--median_filter',type=int, default=1, help='whether to use median filter')
     parser.add_argument('--roi_masking', default=False, type=bool, help='whether to use roi masking')
@@ -91,15 +91,15 @@ def main(args):
     data_loader_train = build_loader_simmim(args)
     data_loader_eval = build_eval_loader(args)
     logger.info(f"Creating model:{args.MODEL.NAME}/{args.MODEL.PATCH_SIZE}")
-    gpu = 3
+    device_ids=[ 4]
     print(torch.cuda.is_available())
     print(torch.cuda.device_count())
     encoder = build_model(args)
     model = MIM(encoder=encoder, encoder_stride=8)
     # model = nn.DataParallel(model, device_ids=[0, 1, 2, 3,4,5])
-    model = nn.DataParallel(model, device_ids=[3,4])
-    torch.cuda.set_device(gpu)
-    model.cuda(gpu)
+    model = nn.DataParallel(model, device_ids=device_ids)
+    torch.cuda.set_device(device_ids[0])
+    model.cuda(device_ids[0])
     logger.info(str(model))
     optimizer = build_pretrain_optimizer(args, model, logger) 
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -109,10 +109,27 @@ def main(args):
     start_time = time.time()
     if args.WANDB:
         wandb.watch(model)
+    
+    # Training loop
+    min_loss = 9999999999999999999
+    consec_epochs = 0
+    threshold = 2
+    loss_stall_threshold = 1e-3
     for epoch in range(args.TRAIN.START_EPOCH, args.TRAIN.EPOCHS):
-        train_one_epoch(args, model, data_loader_train, data_loader_eval, optimizer, epoch, lr_scheduler , "cuda")
+        loss = train_one_epoch(args, model, data_loader_train, data_loader_eval, optimizer, epoch, lr_scheduler , "cuda")
         if epoch % args.SAVE_FREQ == 0 or epoch == (args.TRAIN.EPOCHS - 1):
             save_checkpoint(args, epoch, model.module.encoder, 0., optimizer, lr_scheduler, logger)
+        if loss < min_loss:
+            min_loss = loss
+            consec_epochs = 0
+        else:
+            consec_epochs += 1
+        # Check if the loss has stalled for too many consecutive epochs
+        logger.info(f'consecutive epochs = {consec_epochs} ')
+        if consec_epochs >= threshold and min_loss - loss < loss_stall_threshold:
+            logger.info(f'Loss has not changed significantly in {threshold} epochs. Stopping training early.')
+            logger.info(f'Loss has not changed significantly in {consec_epochs} epochs.')
+            break
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
@@ -199,12 +216,13 @@ def train_one_epoch(config, model, data_loader, data_loader_eval, optimizer, epo
                 ],
                 }, step=epoch)
     validate(args, data_loader_eval, model.module.encoder, device, logger, wandb, epoch)
+    return loss_meter.avg
 
 if __name__ == '__main__':
     args = parse_option()
     print(args)
+    create_dir(args.DATA.OUTPUT_DIR)
     logger = create_logger(output_dir=args.DATA.OUTPUT_DIR, name=f"{args.MODEL.NAME}_{args.MODEL.PATCH_SIZE}")
     seeding(0)
-    create_dir(args.DATA.OUTPUT_DIR)
     main(args)
     

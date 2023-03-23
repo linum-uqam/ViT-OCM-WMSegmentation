@@ -1,7 +1,7 @@
 
 
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = "3"
+os.environ['CUDA_VISIBLE_DEVICES'] = "4"
 import numpy as np
 from glob import glob  # exctrac the images
 import time
@@ -371,7 +371,7 @@ def main():
     args.checkpoint_key = "teacher"
     args.arch = 'vit_small'
     args.opts = None
-    args.wandb = True
+    args.wandb = False
     args.H = 384
     args.W = 384
     args.ratio = 1.0

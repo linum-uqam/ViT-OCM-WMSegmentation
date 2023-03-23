@@ -283,8 +283,9 @@ def build_eval_loader(args):
 
     images = sorted(glob(args.eval_dataset_path + "/images/*")) 
     labels = sorted(glob(args.eval_dataset_path + "/labels/*"))
-    images = images[70:]
-    labels = labels[70:]
+    # images = images[70:]
+    # labels = labels[70:]
+    print(args.eval_dataset_path)
     print("images: ", len(images))
     print("labels: ", len(labels))
     croped_transform = pth_transforms.Compose([

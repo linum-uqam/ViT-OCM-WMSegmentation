@@ -22,12 +22,12 @@ def parse_args():
     parser.add_argument('--arch', default='vit_small', type=str,
         choices=['vit_tiny', 'vit_small', 'vit_base'], help='Architecture (support only ViT atm).')
     parser.add_argument('--patch_size', default=8, type=int, help='Patch resolution of the model.')
-    parser.add_argument('--pretrained_weights', default='/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/vit_small/VIT_8_Hela_224_32B_0.3R_8MP/ckpt_epoch_29.pth', type=str,
+    parser.add_argument('--pretrained_weights', default='/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/vit_small/ROIHELA_384_16B_0.3R_8MP/ckpt_epoch_29.pth', type=str,
         help="Path to pretrained weights to load.")
     parser.add_argument("--checkpoint_key", default="teacher", type=str,
         help='Key to use in the checkpoint (example: "teacher")')
-    parser.add_argument("--eval_dataset_path", default="/home/mohamad_h/data/Fluo-N2DL-HeLa/Fluo-N2DL-HeLa_v1/", type=str, help="Path of the image to load.")
-    parser.add_argument("--image_size", default=720,type=int, nargs="+", help="Resize image.") #(384, 384)
+    parser.add_argument("--eval_dataset_path", default="/home/mohamad_h/data/AIP_annotated_data_cleaned", type=str, help="Path of the image to load.")
+    parser.add_argument("--image_size", default=384,type=int, nargs="+", help="Resize image.") #(384, 384)
     parser.add_argument('--output_dir', default='/home/mohamad_h/LINUM/Results/AIPs_labeled/', help='Path where to save visualizations.')
     parser.add_argument("--threshold", type=float, default=0.1, help="""We visualize masks
         obtained by thresholding the self-attention maps to keep xx% of the mass.""")
@@ -43,7 +43,7 @@ def parse_args():
     # boolean to save the feature maps
     parser.add_argument("--save_feature", type=bool, default=False, help="""To save the feature maps""")
     parser.add_argument("--batch_size", type=int, default=14, help="""Batch size""")
-    parser.add_argument('--wandb', default=True, help='whether to use wandb')
+    parser.add_argument('--wandb', default=False, help='whether to use wandb')
     parser.add_argument('--tag', default='k-means', help='tag for wandb')
     parser.add_argument('--method', default='ours', help='method to implement: ours, otsu, k-means, k-means_ours, chan-vese, chan-vese_ours, heatmap_threshold')
     parser.add_argument('--median_filter', default=1, help='whether to use median filter')
@@ -119,7 +119,8 @@ def validate(args, data_loader, model, device , logger=None, wandb=None, epoch=0
     recall_meter = AverageMeter()
     jaccard_meter = AverageMeter()
     transform = T.ToPILImage()
-
+    images = []
+    i=0
     end = time.time()
     for idx, (images, target) in enumerate(data_loader):
         for i in range(images.shape[0]):

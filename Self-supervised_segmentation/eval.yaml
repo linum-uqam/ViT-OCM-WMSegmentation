@@ -3,7 +3,7 @@ program: eval.py
 method: grid
 
 name: sweep
-project: Hela_OCM
+project: temp_unsup_results
 entity : mohamad_hawchar
 
 metric:
@@ -12,16 +12,16 @@ metric:
 
 parameters:
   image_size:
-    value: 1152
+    value: 384
   pretrained_weights:
     values: [
-      "/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/vit_small/ROIHELA_384_16B_0.3R_8MP/ckpt_epoch_29.pth",
-      "/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/vit_small/Random_HELA_384_16B_0.3R_8MP/ckpt_epoch_20.pth"
+      "/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/vit_small/Random_HELA_384_16B_0.3R_8MP/ckpt_epoch_20.pth",
+      # "/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/vit_small/Random_HELA_384_16B_0.3R_8MP/ckpt_epoch_20.pth"
       ]
-  eval_dataset_path:
-    value: "/home/mohamad_h/data/Fluo-N2DL-HeLa/Fluo-N2DL-HeLa_v1"
+  # eval_dataset_path:
+  #   value: "/home/mohamad_h/data/AIP_annotated_data_cleaned_splitted/test"
   crop:
-    values: [4,16]
+    values: [1]
   method:
-    values: [ours]
+    values: [ours, otsu, k-means, chan-vese]
       

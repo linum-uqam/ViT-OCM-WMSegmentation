@@ -3,7 +3,7 @@ program: mim.py
 method: grid
 
 name: sweep
-project: MIM
+project: EARLY_STOPPAGE
 entity : mohamad_hawchar
 
 metric:
@@ -12,9 +12,11 @@ metric:
 
 parameters:
   image_size:
-      value: 384
+      value: 320
   mask_patch_size:
-    values: [8, 16, 32]
+    values: [8,16]
   mask_ratio:
-    value: 0.5
+    values: [ 0.3, 0.4, 0.6]
+  early_stopping:
+    values: [True, False]
       

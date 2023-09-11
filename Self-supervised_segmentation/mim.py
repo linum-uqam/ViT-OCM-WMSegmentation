@@ -56,7 +56,7 @@ def parse_option():
     parser.add_argument("--checkpoint_key", default="teacher", type=str,
         help='Key to use in the checkpoint (example: "teacher")')
     parser.add_argument("--image_path", default="/home/mohamad_h/data/Data_OCM_ALL/", type=str, help="Path of the image to load.")
-    parser.add_argument("--image_size", default=224, type=int, help="Resize image.")
+    parser.add_argument("--image_size", default=384, type=int, help="Resize image.")
     parser.add_argument('--output_dir', default='/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/temp/', help='Path where to save visualizations.')
     parser.add_argument('--output', default='output', type=str, metavar='PATH',
         help='root of output folder, the full path is <output>/<model_name>/<tag> (default: output)')
@@ -67,12 +67,14 @@ def parse_option():
     parser.add_argument('--mask_patch_size', default=16, type=int, help='patch size for the mask')
     parser.add_argument('--mask_ratio', default=0.5, type=float, help='ratio of the mask')
     parser.add_argument('--tag', default='AM', type=str, help='tag of the experiment')
-    parser.add_argument('--wandb', default=True, help='whether to use wandb')
+    parser.add_argument('--wandb', default=False, help='whether to use wandb')
     parser.add_argument('--loss_operation', default='max', type=str, help='mean or sum or max')
     parser.add_argument("--eval_dataset_path", default="/home/mohamad_h/data/AIP_annotated_data_cleaned", help="evaluate the model on the given dataset")
     parser.add_argument("--crop", type=int, default=1, help="""Amount of croping (4 or 16)""")
     parser.add_argument('--median_filter',type=int, default=1, help='whether to use median filter')
     parser.add_argument('--roi_masking', default=False, type=bool, help='whether to use roi masking')
+    # boolean for the early stopping
+    parser.add_argument('--early_stopping', default=False, type=bool, help='whether to use early stopping')
 
     args = parser.parse_args()
     args = get_config(args)
@@ -82,7 +84,7 @@ def main(args):
     if args.WANDB == True:
         wandb.login()
         wandb.init(
-            project="temp4",
+            project="temp4x4",
             entity="mohamad_hawchar",
             name = f"{args.TAG}_{args.DATA.IMG_SIZE}_{args.DATA.BATCH_SIZE}B_{args.DATA.MASK_RATIO}R_{args.DATA.MASK_PATCH_SIZE}MP",
             config=args
@@ -91,7 +93,7 @@ def main(args):
     data_loader_train = build_loader_simmim(args)
     data_loader_eval = build_eval_loader(args)
     logger.info(f"Creating model:{args.MODEL.NAME}/{args.MODEL.PATCH_SIZE}")
-    device_ids=[ 4]
+    device_ids=[3,4,5]
     print(torch.cuda.is_available())
     print(torch.cuda.device_count())
     encoder = build_model(args)
@@ -113,7 +115,7 @@ def main(args):
     # Training loop
     min_loss = 9999999999999999999
     consec_epochs = 0
-    threshold = 2
+    threshold = 4
     loss_stall_threshold = 1e-3
     for epoch in range(args.TRAIN.START_EPOCH, args.TRAIN.EPOCHS):
         loss = train_one_epoch(args, model, data_loader_train, data_loader_eval, optimizer, epoch, lr_scheduler , "cuda")
@@ -126,7 +128,8 @@ def main(args):
             consec_epochs += 1
         # Check if the loss has stalled for too many consecutive epochs
         logger.info(f'consecutive epochs = {consec_epochs} ')
-        if consec_epochs >= threshold and min_loss - loss < loss_stall_threshold:
+
+        if args.early_stopping and consec_epochs >= threshold and min_loss - loss < loss_stall_threshold:
             logger.info(f'Loss has not changed significantly in {threshold} epochs. Stopping training early.')
             logger.info(f'Loss has not changed significantly in {consec_epochs} epochs.')
             break

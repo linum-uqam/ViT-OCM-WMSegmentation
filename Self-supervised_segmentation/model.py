@@ -93,8 +93,8 @@ def build_model(args):
     encoder = VisionTransformerForSimMIM(
             patch_size=args.MODEL.PATCH_SIZE, 
             embed_dim=384, 
-            depth=12, 
-            num_heads=6, 
+            depth=4, #12
+            num_heads=3, #6
             mlp_ratio=4,
             img_size=[args.DATA.IMG_SIZE],
             qkv_bias=True, 
@@ -102,8 +102,8 @@ def build_model(args):
             interpolate_encoding=True,
             )
 
-    state_dict = get_state_dict(args)
-    encoder.load_state_dict(state_dict, strict=False)
+    # state_dict = get_state_dict(args)
+    # encoder.load_state_dict(state_dict, strict=False)
 
     return encoder
 

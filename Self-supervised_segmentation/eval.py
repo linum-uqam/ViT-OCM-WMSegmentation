@@ -1,5 +1,5 @@
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = "5"
+os.environ['CUDA_VISIBLE_DEVICES'] = "0"
 import argparse
 import torch
 import numpy as np
@@ -15,6 +15,7 @@ import torchvision.transforms as T
 from utils import DiceLoss
 from matplotlib import pyplot as plt
 import torch.nn.functional as F
+from PIL import Image
 import cv2
 
 def parse_args():
@@ -22,11 +23,11 @@ def parse_args():
     parser.add_argument('--arch', default='vit_small', type=str,
         choices=['vit_tiny', 'vit_small', 'vit_base'], help='Architecture (support only ViT atm).')
     parser.add_argument('--patch_size', default=8, type=int, help='Patch resolution of the model.')
-    parser.add_argument('--pretrained_weights', default='/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/vit_small/ROIHELA_384_16B_0.3R_8MP/ckpt_epoch_29.pth', type=str,
+    parser.add_argument('--pretrained_weights', default='', type=str,
         help="Path to pretrained weights to load.")
     parser.add_argument("--checkpoint_key", default="teacher", type=str,
         help='Key to use in the checkpoint (example: "teacher")')
-    parser.add_argument("--eval_dataset_path", default="/home/mohamad_h/data/AIP_annotated_data_cleaned", type=str, help="Path of the image to load.")
+    parser.add_argument("--eval_dataset_path", default="/home/mohamad_h/data/AIP_annotated_data_cleaned_splitted/test", type=str, help="Path of the image to load.")
     parser.add_argument("--image_size", default=384,type=int, nargs="+", help="Resize image.") #(384, 384)
     parser.add_argument('--output_dir', default='/home/mohamad_h/LINUM/Results/AIPs_labeled/', help='Path where to save visualizations.')
     parser.add_argument("--threshold", type=float, default=0.1, help="""We visualize masks
@@ -42,7 +43,7 @@ def parse_args():
     parser.add_argument("--save_query", type=bool, default=False, help="""To save the queried attention maps with the target points""")
     # boolean to save the feature maps
     parser.add_argument("--save_feature", type=bool, default=False, help="""To save the feature maps""")
-    parser.add_argument("--batch_size", type=int, default=14, help="""Batch size""")
+    parser.add_argument("--batch_size", type=int, default=1, help="""Batch size""")
     parser.add_argument('--wandb', default=False, help='whether to use wandb')
     parser.add_argument('--tag', default='k-means', help='tag for wandb')
     parser.add_argument('--method', default='ours', help='method to implement: ours, otsu, k-means, k-means_ours, chan-vese, chan-vese_ours, heatmap_threshold')
@@ -123,10 +124,13 @@ def validate(args, data_loader, model, device , logger=None, wandb=None, epoch=0
     i=0
     end = time.time()
     for idx, (images, target) in enumerate(data_loader):
+        #
         for i in range(images.shape[0]):
             img = images[i].unsqueeze(0)
-            img = img.cuda(non_blocking=True)
-            target = target.cuda(non_blocking=True)
+            #img = img.cuda(non_blocking=True)
+            #target = target.cuda(non_blocking=True)
+            img = img.to(device)
+            target = target.to(device)
 
             if args.crop == 1:
                 feat, attentions, qkv = model.get_intermediate_feat(img.to(device), n=1)
@@ -162,7 +166,7 @@ def validate(args, data_loader, model, device , logger=None, wandb=None, epoch=0
                 temp[0][2] = img
                 img = temp
 
-            average_attentions = cv2.resize(average_attentions, (average_attentions.shape[1]//8, average_attentions.shape[0]//8))
+            average_attentions = cv2.resize(average_attentions, (average_attentions.shape[1]//args.patch_size , average_attentions.shape[0]//args.patch_size))
             # interpolate the attention map to the original size with bicubic interpolation
             average_attentions = cv2.resize(average_attentions, (img.shape[-1], img.shape[-1]), interpolation=cv2.INTER_LINEAR)
             if args.method == "otsu" or args.method == "ours" or args.method == "heatmap_threshold":
@@ -201,23 +205,33 @@ def validate(args, data_loader, model, device , logger=None, wandb=None, epoch=0
             output = output/255
             # target = target.squeeze(0)
             output = output.unsqueeze(0)
-            output = output.cuda(non_blocking=True)
+            # output = output.cuda(non_blocking=True)
+            output = output.to(device)
             # measure accuracy and record loss
             loss = criterion(output, target[i])
             valid_losses.append(loss.item())
             sum_loss += loss.item()
             score_jaccard, score_f1, score_recall, score_precision, score_acc = calculate_metrics(target[i], output)
 
-            loss_meter.update(loss.item(), target.size(0))
-            acc_meter.update(score_acc.item(), target.size(0))
-            f1_meter.update(score_f1.item(), target.size(0))
-            precesion_meter.update(score_precision.item(), target.size(0))
-            recall_meter.update(score_recall.item(), target.size(0))
-            jaccard_meter.update(score_jaccard.item(), target.size(0))
+            loss_meter.update(loss.item(), 1)
+            acc_meter.update(score_acc.item(), 1)
+            f1_meter.update(score_f1.item(), 1)
+            precesion_meter.update(score_precision.item(), 1)
+            recall_meter.update(score_recall.item(), 1)
+            jaccard_meter.update(score_jaccard.item(), 1)
 
             # measure elapsed time
             batch_time.update(time.time() - end)
             end = time.time()
+
+            # # save output in the output folder
+            # temp_output = output[0].cpu().numpy()
+            # temp_output = temp_output.transpose(1, 2, 0)
+            # temp_output = temp_output.squeeze(2)
+            # temp_output = temp_output * 255
+            # temp_output = temp_output.astype(np.uint8)
+            # temp_output = Image.fromarray(temp_output)
+            # temp_output.save(os.path.join(args.output_dir, f"{idx}.png"))
 
         if idx % 1 == 0:
             memory_used = torch.cuda.max_memory_allocated() / (1024.0 * 1024.0)
@@ -225,13 +239,14 @@ def validate(args, data_loader, model, device , logger=None, wandb=None, epoch=0
                 f'Test: [{idx}/{len(data_loader)}]\t'
                 f'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                 f'Loss {loss_meter.val:.4f} ({loss_meter.avg:.4f})\t'
+                f'Dice Score {1- loss_meter.val:.4f} ({1- loss_meter.avg:.4f})\t'
                 f'Acc {acc_meter.val:.3f} ({acc_meter.avg:.3f})\t'
                 f'f1 {f1_meter.val:.3f} ({f1_meter.avg:.3f})\t' 
                 f'prec {precesion_meter.val:.3f} ({precesion_meter.avg:.3f})\t'
                 f'recall {recall_meter.val:.3f} ({recall_meter.avg:.3f})\t'
                 f'jaccard {jaccard_meter.val:.3f} ({jaccard_meter.avg:.3f})\t'
                 f'Mem {memory_used:.0f}MB')
-    logger.info(f' * Acc_average: {acc_meter.avg:.3f} F1_average {f1_meter.avg:.3f} precision {precesion_meter.avg:.3f} recall {recall_meter.avg:.3f} jaccard {jaccard_meter.avg:.3f}')
+    logger.info(f' * Acc_average: {acc_meter.avg:.3f} F1_average {f1_meter.avg:.3f} precision {precesion_meter.avg:.3f} recall {recall_meter.avg:.3f} jaccard {jaccard_meter.avg:.3f} Dice Score {1- loss_meter.avg:.4f}')
     if args.crop == 1:
         img = images[i][0].cpu().numpy()
         target = target[i].cpu().numpy()
@@ -252,7 +267,7 @@ def validate(args, data_loader, model, device , logger=None, wandb=None, epoch=0
                 plt.gca().yaxis.set_major_locator(plt.NullLocator())
                 attnetion_image = plt.imshow(average_attentions)
                 wandb.log({"Loss":loss_meter.val,
-                 "Dice": 1-loss_meter.val,
+                 "Dice": 1-loss_meter.avg,
                  "Acc":acc_meter.avg,
                  "f1" :f1_meter.avg,
                  "precision":precesion_meter.avg,

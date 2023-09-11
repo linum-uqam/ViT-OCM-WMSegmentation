@@ -1,6 +1,6 @@
-
-import numpy as np
 import os
+os.environ['CUDA_VISIBLE_DEVICES'] = "4"
+import numpy as np
 from glob import glob  # exctrac the images
 import time
 from tqdm import tqdm  # for the progress bar
@@ -16,10 +16,11 @@ import torch.nn.functional as F
 import wandb
 from model import build_unet
 
-log_wandb = False
-H = 256
-W = 256
-ratio = 0.2
+log_wandb = True
+H = 512
+W = 512
+ratio = 1.0
+image_path = '/home/mohamad_h/data/AIP_annotated_data_cleaned/'
 config = {
     "H": H,
     "W": W,
@@ -31,7 +32,7 @@ if log_wandb == True:
     wandb.init(
         project="todelete",
         entity="mohamad_hawchar",
-        name=f"unet_0.2",
+        name=f"unet",
         config=config,
     )
     config = wandb.config
@@ -206,13 +207,13 @@ def fully_train(net, model_name):
 
     # temp
     images = sorted(
-        glob("/home/mohamad_h/data/Fluo-N2DL-HeLa/Fluo-N2DL-HeLa_v1/images/*"))
+        glob(image_path + "/images/*"))
     labels = sorted(
-        glob("/home/mohamad_h/data/Fluo-N2DL-HeLa/Fluo-N2DL-HeLa_v1/labels/*"))
-    train_x = images[:50]
-    train_y = labels[:50]
-    valid_x = images[50:70]
-    valid_y = labels[50:70]
+        glob(image_path + "/labels/*"))
+    train_x = images[:25]
+    train_y = labels[:25]
+    valid_x = images[25:30]
+    valid_y = labels[25:30]
     train_x = train_x[:int(len(train_x)*ratio)]
     train_y = train_y[:int(len(train_y)*ratio)]
 
@@ -222,7 +223,7 @@ def fully_train(net, model_name):
     """ Hyperparameters """
     size = (H, W)
     batch_size = 8
-    num_epochs = 50
+    num_epochs = 150
     lr = 1e-4
     checkpoint_path = f"files/{model_name}.pth"
 
@@ -346,11 +347,11 @@ def fully_test(net, model_name):
     #   test_y = sorted(glob("/home/mohamad_h/data/AIP_annotated_data_cleaned_splitted/test/labels/*"))
 
     images = sorted(
-        glob("/home/mohamad_h/data/Fluo-N2DL-HeLa/Fluo-N2DL-HeLa_v1/images/*"))
+        glob(image_path + "/images/*"))
     labels = sorted(
-        glob("/home/mohamad_h/data/Fluo-N2DL-HeLa/Fluo-N2DL-HeLa_v1/labels/*"))
-    test_x = images[70:]
-    test_y = labels[70:]
+        glob(image_path + "/labels/*"))
+    test_x = images[30:]
+    test_y = labels[30:]
 
     """ Hyperparameters """
 

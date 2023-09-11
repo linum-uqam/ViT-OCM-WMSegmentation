@@ -301,6 +301,6 @@ def build_eval_loader(args):
         dataset = AIP_Croped_Labeled_Dataset(images, labels, croped_transform = croped_transform, transform = transform, image_size= args.image_size, crop=args.crop)
     else:
         dataset = AIP_Labeled_Dataset(images, labels , transform = transform)
-    dataloader = DataLoader(dataset, args.batch_size, num_workers=1, pin_memory=True, drop_last=True, collate_fn=collate_fn)
+    dataloader = DataLoader(dataset, args.batch_size, num_workers=1, pin_memory=True, drop_last=False, collate_fn=collate_fn)
     
     return dataloader

@@ -207,6 +207,7 @@ _C.W = 384
 _C.ratio = 0.5
 _C.checkpoint_key = "teacher"
 _C.finetune = True
+_C.early_stopping = False
 
 def update_config(config, args):
 
@@ -293,13 +294,17 @@ def update_config(config, args):
         config.ratio = args.ratio
     if _check_args('finetune'):
         config.finetune = args.finetune
+    if _check_args('early_stopping'):
+        config.early_stopping = args.early_stopping
         
     if type(args.image_size) is not list:
             print("FML")
             args.image_size = [args.image_size, args.image_size]
     print(args.image_size)
     # output folder
-    config.OUTPUT = os.path.join(config.OUTPUT, config.MODEL.NAME, f"{config.TAG}_{config.DATA.IMG_SIZE}_{config.DATA.BATCH_SIZE}B_{config.DATA.MASK_RATIO}R_{config.DATA.MASK_PATCH_SIZE}MP")
+    # config.OUTPUT = os.path.join(config.OUTPUT, config.MODEL.NAME, f"{config.TAG}_{config.DATA.IMG_SIZE}_{config.DATA.BATCH_SIZE}B_{config.DATA.MASK_RATIO}R_{config.DATA.MASK_PATCH_SIZE}MP")
+    
+    config.OUTPUT = os.path.join(config.OUTPUT, config.MODEL.NAME, f"{config.TAG}_{config.DATA.IMG_SIZE}_Experimental_Run")
     create_dir(config.OUTPUT)
     config.freeze()
 

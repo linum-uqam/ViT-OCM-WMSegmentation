@@ -6,7 +6,7 @@ from matplotlib import pyplot as plt
 import cv2
 from torch import nn
 # import threshold_yen
-from skimage.filters import threshold_yen
+from skimage.filters import threshold_yen, threshold_otsu
 # import morphological cleaning
 from skimage.morphology import remove_small_objects, binary_closing, disk
 from skimage.measure import label, regionprops
@@ -43,20 +43,42 @@ def execution_time(start_time, end_time):
     1- OTSU thresholding on the attention map * original image
     2- OTSU thresholding on the original image
 """
+def adaptive_histogram_equalization(image):
+    # Convert image to 8-bit single-channel format
+    if image.dtype != np.uint8:
+        image = np.clip(image, 0, 255).astype(np.uint8)
+    
+    # Apply adaptive histogram equalization
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    return clahe.apply(image)
+
+def min_max_normalize(image):
+    min_val = np.min(image)
+    max_val = np.max(image)
+    if max_val == min_val:
+        return image
+    return (image - min_val) / (max_val - min_val)
+
 def threshold(img , attention, output_directory = "",save = True, name = None):
     # multipli img with average attention
-    # img = np.permute(img, (1,2,0))
-    ## test
-    # resize the attention map to its original size divise by 8
-    ### test
-    attention = attention / np.max(attention)
-    result = img * attention
-    # attention = min_max_normalize(attention)
-    #convert resul to CV_8UC1
+    
+    # attention = attention / np.max(attention)
+    # # attention = adaptive_histogram_equalization(attention)
+    # result = img * attention
+
+    attention = min_max_normalize(attention)
+    # convert img from PIL to numpy into8
+    img = np.array(img)
+
+    # attention = adaptive_histogram_equalization(attention)
     # result = img * attention / np.max(attention)
-    result = result.astype(np.uint8)
+    
+    # result = result.astype(np.uint8)
+    alpha = 0.4
     attention = attention *255
     attention = attention.astype(np.uint8)
+    result = (img/ 2) * (1-alpha) + (attention/ 2) * alpha
+    result = result.astype(np.uint8)
     # save result
     fname = os.path.join(output_directory, "result.png")
     if save:
@@ -65,7 +87,8 @@ def threshold(img , attention, output_directory = "",save = True, name = None):
     ret , th = cv2.threshold(result, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     # apply OTSU thresholding to the original image with skimage
     img = np.array(img)
-    thresh = skimage.filters.threshold_otsu(img)
+    #thresh = skimage.filters.threshold_otsu(img)
+    thresh = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[0]
     th2 = img > thresh
     th2 = th2.astype(np.uint8) * 255
     # ret2, th2 = cv2.threshold( np.array(img), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_TRIANGLE)
@@ -425,9 +448,3 @@ def softmax_normalize(feat_map):
     softmax_norm_feat_map = exp_feat_map / np.sum(exp_feat_map, axis=1, keepdims=True)
     return softmax_norm_feat_map
 
-def min_max_normalize(image):
-    min_val = np.min(image)
-    max_val = np.max(image)
-    if max_val == min_val:
-        return image
-    return (image - min_val) / (max_val - min_val)

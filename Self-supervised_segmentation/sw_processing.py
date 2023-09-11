@@ -1,45 +1,152 @@
 
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = "5"
+os.environ['CUDA_VISIBLE_DEVICES'] = "0"
 import numpy as np
 import torch
 from torchvision import transforms
 from PIL import Image
 import argparse
 import dino.vision_transformer as vits
-from utils import compute_attention, create_dir, threshold
+from utils import compute_attention, create_dir
 import matplotlib.pyplot as plt
 import cv2
+import os
+import numpy as np
+import torch
+from matplotlib import pyplot as plt
+import cv2
+import numpy as np
+import skimage
+
+def adaptive_histogram_equalization(image):
+    # Convert image to 8-bit single-channel format
+    if image.dtype != np.uint8:
+        image = np.clip(image, 0, 255).astype(np.uint8)
+    
+    # Apply adaptive histogram equalization
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    return clahe.apply(image)
+
+def min_max_normalize(image):
+    min_val = np.min(image)
+    max_val = np.max(image)
+    if max_val == min_val:
+        return image
+    return (image - min_val) / (max_val - min_val)
+
+def threshold(img , attention, output_directory = "",save = True, name = None):
+    # multipli img with average attention
+    
+    # attention = attention / np.max(attention)
+    # result = img * attention
+    # attention = adaptive_histogram_equalization(attention)
+    attention = min_max_normalize(attention)
+    result = img * attention / np.max(attention)
+    
+    result = result.astype(np.uint8)
+    attention = attention *255
+    attention = attention.astype(np.uint8)
+    # save result
+    fname = os.path.join(output_directory, "result.png")
+    if save:
+        plt.imsave(fname=fname, arr=result, format='png') 
+    # apply OTSU thresholding to the average result with opencv
+    ret , th = cv2.threshold(result, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    # apply OTSU thresholding to the original image with skimage
+    img = np.array(img)
+    thresh = skimage.filters.threshold_otsu(img)
+    th2 = img > thresh
+    th2 = th2.astype(np.uint8) * 255
+    # ret2, th2 = cv2.threshold( np.array(img), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_TRIANGLE)
+    ret3, th3 = cv2.threshold( attention, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    if name is not None:
+        file_name = name + "/"
+        create_dir(os.path.join(output_directory,file_name))
+    else:
+        file_name = ""
+    
+    if save:
+        fname = os.path.join(output_directory,file_name, "OTSU_th" + "_average.png")
+        plt.imsave(fname=fname, arr=th, format='png', cmap='gray')
+        print(f"{fname} saved.")
+        fname = os.path.join(output_directory, "OTSU_th" + "_original.png")
+        plt.imsave(fname=fname, arr=th2, format='png', cmap='gray')
+        print(f"{fname} saved.")
+        fname = os.path.join(output_directory, "weighted_iamge" + "_attention.png")
+        plt.imsave(fname=fname, arr=result, format='png', cmap='gray')
+        fname = os.path.join(output_directory, "heatmap_otsu" + "_attention.png")
+        plt.imsave(fname=fname, arr=th3, format='png', cmap='gray')
+        fname = os.path.join(output_directory, "temp.png")
+        plt.imsave(fname=fname, arr=attention, format='png')
+    return th, th2, th3
+
+
+
+# def concat_crops(crops, stride, window_size):
+#     crop_number = len(crops)
+#     crop_iteration = int(np.sqrt(crop_number))
+#     vertical = []
+#     # stride = 128
+#     step = window_size - stride 
+#     for i in range(crop_iteration):
+#         horizontal = crops[i * crop_iteration]
+#         for j in range(1, crop_iteration):
+#             # Concatenate the current crop with the previous crop horizontally
+#             left_window = horizontal
+#             right_window = crops[i * crop_iteration + j]
+#             crop_left = left_window[:, :-step]
+#             crop_right = right_window[ :, -stride:]
+#             overlap = (left_window[:, -step:]// 2 + right_window[ :, :-stride]// 2) 
+#             horizontal = np.concatenate((crop_left, overlap, crop_right), axis=1)
+            
+#         if i == 0:
+#             # First row
+#             vertical = horizontal
+#         else:
+#             # Middle rows
+#             top_overlap = (vertical[-step:, :]// 2 + horizontal[:-stride, :]// 2) 
+#             vertical = np.concatenate((vertical[:-step, :], top_overlap,horizontal[-stride:, :]), axis=0)
+    
+#     return vertical
+
+
 def concat_crops(crops, stride, window_size):
     crop_number = len(crops)
     crop_iteration = int(np.sqrt(crop_number))
     vertical = []
-    # stride = 128
-    step = window_size - stride 
+    step = window_size - stride
     for i in range(crop_iteration):
         horizontal = crops[i * crop_iteration]
         for j in range(1, crop_iteration):
-            # Concatenate the current crop with the previous crop horizontally
             left_window = horizontal
             right_window = crops[i * crop_iteration + j]
             crop_left = left_window[:, :-step]
-            crop_right = right_window[ :, -stride:]
-            overlap = (left_window[:, -step:]// 2 + right_window[ :, :-stride]// 2) 
+            crop_right = right_window[:, -stride:]
+            overlap = blend_images_horizontally(left_window[:, -step:], right_window[:, :-stride])
             horizontal = np.concatenate((crop_left, overlap, crop_right), axis=1)
-            
+
         if i == 0:
-            # First row
             vertical = horizontal
         else:
-            # Middle rows
-            top_overlap = (vertical[-step:, :]// 2 + horizontal[:-stride, :]// 2) 
-            vertical = np.concatenate((vertical[:-step, :], top_overlap,horizontal[-stride:, :]), axis=0)
-    
+            top_overlap = blend_images_vertically(vertical[-step:, :], horizontal[:-stride, :])
+            vertical = np.concatenate((vertical[:-step, :], top_overlap, horizontal[-stride:, :]), axis=0)
+
     return vertical
 
+def blend_images_vertically(top, bottom):
+    overlap = np.zeros_like(top)
+    weights_v = np.linspace(1, 0, overlap.shape[0])[:, np.newaxis]  # Linearly decreasing weights vertically
+    for i in range(overlap.shape[0]):
+        overlap[i] = (top[i] * weights_v[i]) + (bottom[i] * (1 - weights_v[i]))
+    return overlap
 
-# Define the window size and stride
-
+def blend_images_horizontally(left, right):
+    overlap = np.zeros_like(left)
+    weights_h = np.linspace(1, 0, overlap.shape[1])  # Linearly decreasing weights horizontally
+    for i in range(overlap.shape[0]):
+        for j in range(overlap.shape[1]):
+            overlap[i, j] = (left[i, j] * weights_h[j]) + (right[i, j] * (1 - weights_h[j]))
+    return overlap
 
 def sliding_window(image, stride=128, window_size=384):
     crops = []
@@ -60,7 +167,7 @@ if __name__ == '__main__':
     parser.add_argument('--arch', default='vit_small', type=str,
         choices=['vit_tiny', 'vit_small', 'vit_base'], help='Architecture (support only ViT atm).')
     parser.add_argument('--patch_size', default=8, type=int, help='Patch resolution of the model.')
-    parser.add_argument('--pretrained_weights', default='/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/vit_small/VIT_8_AM_384_16B_0.3R_8MP/ckpt_epoch_5.pth', type=str,
+    parser.add_argument('--pretrained_weights', default='/home/mohamad_h/output/vit_small/AIP+M_224_multistepLR_60B_meanL/ckpt_epoch_29.pth', type=str,
         help="Path to pretrained weights to load.")
     parser.add_argument("--checkpoint_key", default="teacher", type=str,
         help='Key to use in the checkpoint (example: "teacher")')
@@ -107,10 +214,12 @@ if __name__ == '__main__':
             print("There is no reference weights available for this model => We use random weights.")
 
     # Example usage
-    to_be_processed_img = Image.open('/home/mohamad_h/data/Data_OCM_ALL/brain_06_z04_roi03.jpg').convert('RGB')
-    to_be_processed_img = to_be_processed_img.resize((1152, 1152))
+    to_be_processed_img = Image.open('/home/mohamad_h/data/Data_OCM_ALL_NoTophat/brain_06_z27_roi03.jpg').convert('RGB')
     window_size = 384
     stride = 128
+    # to_be_processed_img = to_be_processed_img.resize((to_be_processed_img.width -to_be_processed_img.width%(window_size + stride), to_be_processed_img.height -to_be_processed_img.height%(window_size + stride)))
+    # resize the image to the same size of args.image_size
+    to_be_processed_img = to_be_processed_img.resize(args.image_size)
     cropped_images = sliding_window(to_be_processed_img, stride, window_size)
     print(len(cropped_images))                
     output_image = concat_crops(cropped_images, stride, window_size) 

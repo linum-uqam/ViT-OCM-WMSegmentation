@@ -17,18 +17,18 @@ import random
 import torch.nn.functional as F
 import wandb
 from model import build_finetune_model, LinearProbing, build_unet
-from utils import seeding, create_dir, execution_time, DiceLoss
+from utils import seeding, create_dir, execution_time, DiceLoss, compute_attention, threshold
 from config import get_config
 import argparse
-
-
-class Dataset(Dataset):
-    def __init__(self, images_path, masks_path, image_size=512):
+import torchvision.transforms as T
+rand = False
+class Dataset_PGT(Dataset):
+    def __init__(self, images_path, image_size=512, encoder = None):
 
         self.images_path = images_path
-        self.masks_path = masks_path
         self.image_size = image_size
         self.n_samples = len(images_path)
+        self.encoder = encoder
 
     def __getitem__(self, index):
         """ Reading image """
@@ -38,16 +38,7 @@ class Dataset(Dataset):
         image = np.transpose(image, (2, 0, 1))  # (3, 512, 512)
         image = image.astype(np.float32)
         image = torch.from_numpy(image)
-
-        """ Reading mask """
-        mask = cv2.imread(self.masks_path[index], cv2.IMREAD_GRAYSCALE)
-        mask = cv2.resize(mask, (self.image_size, self.image_size))
-        mask = mask/255.0  # (512, 512)
-        mask = np.expand_dims(mask, axis=0)  # (1, 512, 512)
-        mask = mask.astype(np.float32)
-        mask = torch.from_numpy(mask)
-
-        return image, mask
+        return image
 
     def __len__(self):
         return self.n_samples
@@ -56,14 +47,43 @@ class Dataset(Dataset):
 """## Training"""
 
 
-def train(model, loader, optimizer, loss_fn, device):
+def train(model, loader, optimizer, loss_fn, device, encoder):
     sum_loss = 0.0
     model.train()
-    for x, y in loader:
+    for x in loader:
         x = x.to(device, dtype=torch.float32)
-        y = y.to(device, dtype=torch.float32)
+        y = torch.zeros(x.shape[0], 1, x.shape[-2], x.shape[-1]).to(device, dtype=torch.float32)
+        transform = T.ToPILImage()
+        with torch.no_grad():
+            for i in range(x.shape[0]):
+                x_ = x[i].unsqueeze(0)
+                feat, attentions, qkv = encoder.get_intermediate_feat(x_, n=1)
+                query = 0
+                w_featmap = x_.shape[-2] // 8
+                h_featmap = x_.shape[-1] // 8
+                attention_response, nh = compute_attention(attentions, query, w_featmap, h_featmap, 8)
+                # average attentions over heads
 
-        # Initialiser les paramètres des gradients à zéro
+                # rand = True
+                if rand:
+                    # Generate a random number of rows to select between 1 and 6
+                    num_rows = np.random.randint(1, 7)
+                    # Generate a random set of row indices
+                    selected_rows = np.random.choice(attention_response.shape[0], size=num_rows, replace=False)
+                    # Select the corresponding rows of the array
+                    selected_attentions = attention_response[selected_rows, :]
+                    # Compute the mean of the selected rows
+                    average_attentions = np.mean(selected_attentions, axis=0)
+                else:
+                    average_attentions = np.mean(attention_response, axis=0)
+                average_attentions = cv2.resize(average_attentions, (average_attentions.shape[1]//8, average_attentions.shape[0]//8))
+                # interpolate the attention map to the original size with bicubic interpolation
+                average_attentions = cv2.resize(average_attentions, (x_.shape[-1], x_.shape[-1]), interpolation=cv2.INTER_LINEAR)
+                output, original_otsu, heatmap_otsu = threshold(transform(x_.squeeze(0)).convert("L") , average_attentions, save=False)
+                # save output
+                fname = "mask.png"
+                # cv2.imwrite(fname, output)
+                y[i] = torch.from_numpy(output/255.0).unsqueeze(0).unsqueeze(0) 
         optimizer.zero_grad()
         y_pred = model(x)
         loss = loss_fn(y_pred, y)
@@ -77,14 +97,46 @@ def train(model, loader, optimizer, loss_fn, device):
     return sum_loss
 
 
-def evaluate(model, loader, loss_fn, device):
+def evaluate(model, loader, loss_fn, device, encoder):
     sum_loss = 0.0
 
     model.eval()
     with torch.no_grad():
-        for x, y in loader:
+        for x in loader:
             x = x.to(device, dtype=torch.float32)
-            y = y.to(device, dtype=torch.float32)
+            y = torch.zeros(x.shape[0], 1, x.shape[-2], x.shape[-1]).to(device, dtype=torch.float32)
+            transform = T.ToPILImage()
+            for i in range(x.shape[0]):
+                x_ = x[i].unsqueeze(0)
+                feat, attentions, qkv = encoder.get_intermediate_feat(x_, n=1)
+                query = 0
+                w_featmap = x_.shape[-2] // 8
+                h_featmap = x_.shape[-1] // 8
+                attention_response, nh = compute_attention(attentions, query, w_featmap, h_featmap, 8)
+                # average attentions over heads
+
+                # rand = True
+                if rand:
+                    # Generate a random number of rows to select between 1 and 6
+                    num_rows = np.random.randint(1, 7)
+                    # Generate a random set of row indices
+                    selected_rows = np.random.choice(attention_response.shape[0], size=num_rows, replace=False)
+                    # Select the corresponding rows of the array
+                    selected_attentions = attention_response[selected_rows, :]
+                    # Compute the mean of the selected rows
+                    average_attentions = np.mean(selected_attentions, axis=0)
+                else:
+                    average_attentions = np.mean(attention_response, axis=0)
+                average_attentions = cv2.resize(average_attentions, (average_attentions.shape[1]//8, average_attentions.shape[0]//8))
+                # interpolate the attention map to the original size with bicubic interpolation
+                average_attentions = cv2.resize(average_attentions, (x_.shape[-1], x_.shape[-1]), interpolation=cv2.INTER_LINEAR)
+                output, original_otsu, heatmap_otsu = threshold(transform(x_.squeeze(0)).convert("L") , average_attentions, save=False)
+                # save output
+                fname = "mask.png"
+                # cv2.imwrite(fname, output)
+                # convert output to float32
+                y[i] = torch.from_numpy(output/255.0).unsqueeze(0).unsqueeze(0)  
+
 
             y_pred = model(x)
             loss = loss_fn(y_pred, y)
@@ -98,7 +150,7 @@ def smooth(x, size):
     return np.convolve(x, np.ones(size)/size, mode='valid')
 
 
-def fully_train(net, model_name, config):
+def fully_train(net, model_name, config, encoder):
     """ Seeding """
     seeding(42)
 
@@ -106,28 +158,13 @@ def fully_train(net, model_name, config):
     create_dir("files")
 
     """ Load dataset """
-    # train_x = sorted(glob("/home/mohamad_h/data/AIP_annotated_data_cleaned_splitted/train/images/*"))
-    # # take only percentage of the training data
-    # train_x = train_x[:int(len(train_x)*ratio)]
-    # train_y = sorted(glob("/home/mohamad_h/data/AIP_annotated_data_cleaned_splitted/train/labels/*"))
-    # # take only percentage of the training data
-    # train_y = train_y[:int(len(train_y)*ratio)]
-    # valid_x = sorted(glob("/home/mohamad_h/data/AIP_annotated_data_cleaned_splitted/valid/images/*"))
-    # valid_y = sorted(glob("/home/mohamad_h/data/AIP_annotated_data_cleaned_splitted/valid/labels/*"))
-
-    # temp
-    images = sorted(
-        glob(config.DATA.IMAGE_PATH +"/images/*"))
-    labels = sorted(
-        glob(config.DATA.IMAGE_PATH +"/labels/*"))
-    train_x = images[:50]
-    train_y = labels[:50]
-    valid_x = images[50:70]
-    valid_y = labels[50:70]
+    images = sorted(glob(config.DATA.IMAGE_PATH +"/*"))
+    print(f"dir: {config.DATA.IMAGE_PATH}")
+    train_x = images[:200]
+    valid_x = images[200:]
     train_x = train_x[:int(len(train_x)*config.ratio)]
-    train_y = train_y[:int(len(train_y)*config.ratio)]
 
-    data_str = f"Dataset Size:\nTrain: {len(train_x)} / {len(train_y)} - Valid: {len(valid_x)} / {len(valid_y)}\n"
+    data_str = f"Dataset Size:\nTrain: {len(train_x)}  - Valid: {len(valid_x)} \n"
     print(data_str)
 
     """ Hyperparameters """
@@ -136,10 +173,12 @@ def fully_train(net, model_name, config):
     num_epochs = config.TRAIN.EPOCHS
     lr = config.TRAIN.BASE_LR
     checkpoint_path = f"files/{model_name}.pth"
-
+    device = torch.device('cuda')
+    encoder.to(device)
+    encoder.eval()
     """ Dataset and loader """
-    train_dataset = Dataset(train_x, train_y, image_size=config.H)
-    valid_dataset = Dataset(valid_x, valid_y, image_size=config.H)
+    train_dataset = Dataset_PGT(train_x, image_size=config.H, encoder=encoder)
+    valid_dataset = Dataset_PGT(valid_x, image_size=config.H, encoder=encoder)
 
     train_loader = DataLoader(
         dataset=train_dataset,
@@ -155,9 +194,8 @@ def fully_train(net, model_name, config):
         num_workers=2
     )
 
-    device = torch.device('cuda')
-    # model = net()
-    model = net.to(device)
+    model = net()
+    model = model.to(device)
     if config.WANDB == True:
         wandb.watch(model)
 
@@ -175,8 +213,8 @@ def fully_train(net, model_name, config):
     for epoch in range(num_epochs):
         start_time = time.time()
 
-        train_loss = train(model, train_loader, optimizer, loss_fn, device)
-        valid_loss = evaluate(model, valid_loader, loss_fn, device)
+        train_loss = train(model, train_loader, optimizer, loss_fn, device, encoder)
+        valid_loss = evaluate(model, valid_loader, loss_fn, device, encoder)
 
         """ Saving the model """
         if valid_loss < best_valid_loss:
@@ -257,11 +295,11 @@ def fully_test(net, model_name, config):
     #   test_y = sorted(glob("/home/mohamad_h/data/AIP_annotated_data_cleaned_splitted/test/labels/*"))
 
     images = sorted(
-        glob(config.DATA.IMAGE_PATH +"/images/*"))
+        glob(config.eval_dataset_path +"/images/*"))
     labels = sorted(
-        glob(config.DATA.IMAGE_PATH +"/labels/*"))
-    test_x = images[70:]
-    test_y = labels[70:]
+        glob(config.eval_dataset_path +"/labels/*"))
+    test_x = images#[70:]
+    test_y = labels#[70:]
 
     """ Hyperparameters """
 
@@ -271,8 +309,8 @@ def fully_test(net, model_name, config):
     """ Load the checkpoint """
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # model = net()
-    model = net.to(device)
+    model = net()
+    model = model.to(device)
     # model = model.to(device)
     model.load_state_dict(torch.load(checkpoint_path, map_location=device))
     model.eval()
@@ -298,7 +336,7 @@ def fully_test(net, model_name, config):
 
         """ Reading mask """
         mask = cv2.imread(y, cv2.IMREAD_GRAYSCALE)  # (512, 512)
-        mask = cv2.resize(mask, size, interpolation=cv2.INTER_NEAREST)
+        mask = cv2.resize(mask, size)
         # mask = cv2.resize(mask, size)
         y = np.expand_dims(mask, axis=0)  # (1, 512, 512)
         y = y/255.0
@@ -367,7 +405,7 @@ def main():
     args = argparse.Namespace()
     args.patch_size = 8
     args.image_size = 384
-    args.pretrained_weights = '/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/vit_small/AM_224_Cos_32B_sumL_0.3M_16MP/ckpt_epoch_29.pth'
+    args.pretrained_weights = '/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/vit_small/VIT_8_AM_384_16B_0.3R_16MP/ckpt_epoch_15.pth'
     args.checkpoint_key = "teacher"
     args.arch = 'vit_small'
     args.opts = None
@@ -375,11 +413,12 @@ def main():
     args.H = 384
     args.W = 384
     args.ratio = 1.0
-    args.finetune = True
-    args.image_path = '/home/mohamad_h/data/Fluo-N2DL-HeLa/Fluo-N2DL-HeLa_v1'
+    args.finetune = False
+    args.image_path = '/home/mohamad_h/data/Aips_Good_Images_Only/imgs/'
+    args.eval_dataset_path = '/home/mohamad_h/data/AIP_annotated_data_cleaned/'
     args.epochs = 30
-    args.batch_size = 3
-    args.base_lr = 1e-4
+    args.batch_size = 8
+    args.base_lr = 1e-3
     config = get_config(args)
     
 
@@ -388,7 +427,7 @@ def main():
         wandb.init(
             project="todelete",
             entity="mohamad_hawchar",
-            name=f"ft_2_lr",
+            name=f"pgt_good_data_only_3epochs_unsupervised",
             config=config,
         )
         config3 = wandb.config
@@ -397,20 +436,18 @@ def main():
     if config.finetune == False:
         for param in encoder.parameters():
             param.requires_grad = False
-    linearprob_model = LinearProbing(encoder=encoder, encoder_stride=8, layer_num=2)
-    print(linearprob_model)
-    name = "ft_Fluo"
-    tl_UNet, vl_UNet = fully_train(linearprob_model, name, config)
-
-    fully_test(linearprob_model, name,config)
+    
+    tl_UNet, vl_UNet = fully_train(build_unet, "pgt",config, encoder)
+    fully_test(build_unet, "pgt", config)
     if config.WANDB == True:
         wandb.finish()
 
-    plt.plot(smooth(vl_UNet, 1), 'r-', label='vl_unet')
-    plt.legend()
-    plt.show
+    # plt.plot(smooth(vl_UNet, 1), 'r-', label='vl_unet')
+    # plt.legend()
+    # plt.show
 
     torch.cuda.empty_cache()
+
 
 if __name__ == "__main__":
     main()

@@ -1,7 +1,7 @@
 # git add --all -- ':!images/' ':!AIPs_40X/' :'!output/' :'!wandb/' :'!files/' :'!results/'
 # git commit -m "UNET Evalutation"
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = "4"
+os.environ['CUDA_VISIBLE_DEVICES'] = "0"
 import argparse
 import matplotlib.pyplot as plt
 import torch
@@ -24,18 +24,19 @@ if __name__ == '__main__':
     parser.add_argument('--arch', default='vit_small', type=str,
         choices=['vit_tiny', 'vit_small', 'vit_base'], help='Architecture (support only ViT atm).')
     parser.add_argument('--patch_size', default=8, type=int, help='Patch resolution of the model.')
-    parser.add_argument('--pretrained_weights', default='/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/vit_small/VIT_8_AM_384_16B_0.3R_8MP/ckpt_epoch_5.pth', type=str,
+    parser.add_argument('--pretrained_weights', default='/home/mohamad_h/output/vit_small/AM_384_Experimental_Run/ckpt_epoch_15.pth', type=str,
         help="Path to pretrained weights to load.")
+    #/home/mohamad_h/LINUM/maitrise-mohamad-hawchar/Self-supervised_segmentation/output/vit_small/AM_224_Cos_32B_sumL_0.3M_16MP/ckpt_epoch_20.pth
     parser.add_argument("--checkpoint_key", default="teacher", type=str,
         help='Key to use in the checkpoint (example: "teacher")')
-    parser.add_argument("--image_path", default="/home/mohamad_h/data/Data_OCM_ALL/brain_02_z33_roi02.jpg", type=str, help="Path of the image to load.")
-    parser.add_argument("--image_size", default=(1152, 1152), type=int, nargs="+", help="Resize image.")
+    parser.add_argument("--image_path", default="/home/mohamad_h/data/Data_OCM_ALL/roi_0424_exp_2018-09-06_Brain13_2R-SOCT_roi_40x_Acquisitions_40x_Acquisitions_z11_A03_volume_OCM_(Random_40xROI).jpg", type=str, help="Path of the image to load.")
+    parser.add_argument("--image_size", default=(384, 384), type=int, nargs="+", help="Resize image.")
     parser.add_argument('--output_dir', default='/home/mohamad_h/LINUM/Results/AIPs/', help='Path where to save visualizations.')
     parser.add_argument("--threshold", type=float, default=0.1, help="""We visualize masks
         obtained by thresholding the self-attention maps to keep xx% of the mass.""")
     # Boolyan for croping 
-    parser.add_argument("--crop", type=int, default=16, help="""Amount of croping (4 or 16)""")
-    parser.add_argument("--window_stride", type=int, default=128, help="""Stride of the sliding window""")
+    parser.add_argument("--crop", type=int, default=1, help="""Amount of croping (4 or 16)""")
+    parser.add_argument("--window_stride", type=int, default=0, help="""Stride of the sliding window""")
     # Attention query analysis mode boolean
     parser.add_argument("--region_query", type=bool, default=False, help="""To analyze the attention query or not""")
     parser.add_argument("--query_analysis", type=bool, default=False, help="""To analyze the attention query or not""")
@@ -66,7 +67,7 @@ if __name__ == '__main__':
         state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
         # remove `backbone.` prefix induced by multicrop wrapper
         state_dict = {k.replace("backbone.", ""): v for k, v in state_dict.items()}  
-        msg = model.load_state_dict(state_dict["model"], strict=False)
+        msg = model.load_state_dict(state_dict["model"], strict=False) # use only state_dict if you are working with dino full checkpoints
         print('Pretrained weights found at {} and loaded with msg: {}'.format(args.pretrained_weights, msg))
     else:
         print("Please use the `--pretrained_weights` argument to indicate the path of the checkpoint to evaluate.")

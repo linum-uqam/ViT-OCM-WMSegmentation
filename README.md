@@ -28,3 +28,11 @@ To get started with each experiment, please refer to the respective README files
 
 If you find this work useful for your research, please consider citing our paper:
 
+@inproceedings{hawchar2023leveraging,
+  title={Leveraging Self-attention Mechanism in Vision Transformers for Unsupervised Segmentation of Optical Coherence Microscopy White Matter Images},
+  author={Hawchar, Mohamad and Lefebvre, Jo{\"e}l},
+  booktitle={International Workshop on Machine Learning in Medical Imaging},
+  pages={247--256},
+  year={2023},
+  organization={Springer}
+}
